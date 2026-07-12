@@ -1,0 +1,15 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Rate {
+  id        Int      @id @default(autoincrement())
+  source    String
+  price     Float
+  fetchedAt DateTime @default(now())
+}
