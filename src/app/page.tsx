@@ -9,7 +9,7 @@ function fmt(d: Date): string {
 }
 
 export default async function HomePage() {
-  const [paraleloRecords, recentRecords] = await Promise.all([
+  const [paraleloRecords, recentRecords, latestParalelo] = await Promise.all([
     prisma.rate.findMany({
       where: { source: "paralelo" },
       orderBy: { fetchedAt: "desc" },
@@ -19,9 +19,23 @@ export default async function HomePage() {
     prisma.rate.findMany({
       orderBy: { fetchedAt: "desc" },
       take: 20,
-      select: { source: true, price: true, fetchedAt: true },
+      select: { source: true, price: true, buyPrice: true, sellPrice: true, buyVolume: true, sellVolume: true, fetchedAt: true },
+    }),
+    prisma.rate.findFirst({
+      where: { source: "paralelo" },
+      orderBy: { fetchedAt: "desc" },
+      select: { buyPrice: true, sellPrice: true, buyVolume: true, sellVolume: true },
     }),
   ]);
+
+  const latest = latestParalelo
+    ? {
+        buyPrice: latestParalelo.buyPrice,
+        sellPrice: latestParalelo.sellPrice,
+        buyVolume: latestParalelo.buyVolume,
+        sellVolume: latestParalelo.sellVolume,
+      }
+    : null;
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
@@ -35,6 +49,7 @@ export default async function HomePage() {
       </header>
 
       <Dashboard
+        latestMarket={latest}
         paraleloHistory={paraleloRecords.map((r) => ({
           price: r.price,
           time: fmt(r.fetchedAt),
@@ -42,6 +57,10 @@ export default async function HomePage() {
         recentRecords={recentRecords.map((r) => ({
           source: r.source,
           price: r.price,
+          buyPrice: r.buyPrice ?? undefined,
+          sellPrice: r.sellPrice ?? undefined,
+          buyVolume: r.buyVolume ?? undefined,
+          sellVolume: r.sellVolume ?? undefined,
           time: fmt(r.fetchedAt),
         }))}
       />

@@ -11,5 +11,9 @@ model Rate {
   id        Int      @id @default(autoincrement())
   source    String
   price     Float
+  buyPrice  Float?
+  sellPrice Float?
+  buyVolume Float?
+  sellVolume Float?
   fetchedAt DateTime @default(now())
 }
