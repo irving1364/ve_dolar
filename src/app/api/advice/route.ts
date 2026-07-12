@@ -2,16 +2,16 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { prisma } from "@/lib/prisma";
 
-const deepseek = new OpenAI({
-  baseURL: "https://api.deepseek.com",
-  apiKey: process.env.DEEPSEEK_API_KEY ?? "",
+const groq = new OpenAI({
+  baseURL: "https://api.groq.com/openai/v1",
+  apiKey: process.env.GROQ_API_KEY ?? "",
 });
 
 export async function POST(): Promise<NextResponse> {
   try {
-    if (!process.env.DEEPSEEK_API_KEY) {
+    if (!process.env.GROQ_API_KEY) {
       return NextResponse.json(
-        { error: "DEEPSEEK_API_KEY no configurada" },
+        { error: "GROQ_API_KEY no configurada" },
         { status: 500 }
       );
     }
@@ -57,8 +57,8 @@ Con base en estos datos, responde EXACTAMENTE en este formato sin desviarte:
 
 Máximo 200 palabras en total. Responde en español.`;
 
-    const completion = await deepseek.chat.completions.create({
-      model: "deepseek-chat",
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
       messages: [{ role: "user", content: prompt }],
       temperature: 0.3,
       max_tokens: 400,

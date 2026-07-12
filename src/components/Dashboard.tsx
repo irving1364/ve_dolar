@@ -35,7 +35,7 @@ export default function Dashboard({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const chartData = paraleloHistory.reverse();
+  const chartData = [...paraleloHistory].reverse();
 
   const requestAdvice = useCallback(async () => {
     setLoading(true);
