@@ -16,7 +16,7 @@ function fmt(d: Date): string {
 }
 
 export default async function HomePage() {
-  const [paraleloRecords, bcvRecords, recentRecords, latestParalelo] =
+  const [paraleloRecords, bcvRecords, recentRecords, latestParalelo, trades] =
     await Promise.all([
       prisma.rate.findMany({
         where: { source: "paralelo" },
@@ -53,6 +53,10 @@ export default async function HomePage() {
           buyVolume: true,
           sellVolume: true,
         },
+      }),
+      prisma.trade.findMany({
+        where: { status: "open" },
+        orderBy: { createdAt: "desc" },
       }),
     ]);
 
@@ -102,6 +106,19 @@ export default async function HomePage() {
           buyVolume: r.buyVolume ?? undefined,
           sellVolume: r.sellVolume ?? undefined,
           time: fmt(r.fetchedAt),
+        }))}
+        trades={trades.map((t) => ({
+          id: t.id,
+          type: t.type,
+          amount: t.amount,
+          price: t.price,
+          status: t.status,
+          targetPrice: t.targetPrice,
+          profit: t.profit,
+          profitPct: t.profitPct,
+          notes: t.notes,
+          createdAt: t.createdAt.toISOString(),
+          closedAt: t.closedAt?.toISOString() ?? null,
         }))}
       />
     </main>

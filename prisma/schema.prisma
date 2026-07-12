@@ -17,3 +17,17 @@ model Rate {
   sellVolume Float?
   fetchedAt DateTime @default(now())
 }
+
+model Trade {
+  id         Int      @id @default(autoincrement())
+  type       String
+  amount     Float
+  price      Float
+  status     String   @default("open")
+  targetPrice Float?
+  closedAt   DateTime?
+  profit     Float?
+  profitPct  Float?
+  notes      String?
+  createdAt  DateTime @default(now())
+}

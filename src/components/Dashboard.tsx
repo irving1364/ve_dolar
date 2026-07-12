@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import TradePanel from "./TradePanel";
 import {
   LineChart,
   Line,
@@ -45,11 +46,26 @@ interface HourlyPattern {
   maxPrice: number;
 }
 
+interface TradeData {
+  id: number;
+  type: string;
+  amount: number;
+  price: number;
+  status: string;
+  targetPrice: number | null;
+  profit: number | null;
+  profitPct: number | null;
+  notes: string | null;
+  createdAt: string;
+  closedAt: string | null;
+}
+
 interface DashboardProps {
   latestMarket: MarketSnapshot | null;
   paraleloHistory: RatePoint[];
   bcvHistory: RatePoint[];
   recentRecords: Record[];
+  trades: TradeData[];
 }
 
 function fmtNum(n: number, decimals = 2): string {
@@ -68,6 +84,7 @@ export default function Dashboard({
   paraleloHistory,
   bcvHistory,
   recentRecords,
+  trades,
 }: DashboardProps) {
   const [advice, setAdvice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -470,6 +487,8 @@ export default function Dashboard({
           </div>
         </section>
       )}
+
+      <TradePanel currentPrice={latestMarket?.price ?? null} />
 
       <section>
         <div className="mb-4 flex items-center justify-between">

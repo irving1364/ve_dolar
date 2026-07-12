@@ -27,6 +27,56 @@ interface BinanceResponse {
   data: BinanceAd[];
 }
 
+async function sendTelegram(message: string): Promise<void> {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return;
+
+  try {
+    await fetch(
+      `https://api.telegram.org/bot${token}/sendMessage`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: message,
+          parse_mode: "HTML",
+        }),
+        signal: AbortSignal.timeout(10000),
+      }
+    );
+  } catch {
+    console.warn("Telegram notification failed");
+  }
+}
+
+async function evaluateTrades(currentPrice: number): Promise<void> {
+  const openTrades = await prisma.trade.findMany({
+    where: { status: "open" },
+  });
+
+  for (const t of openTrades) {
+    if (!t.targetPrice) continue;
+
+    let reached = false;
+    if (t.type === "sell" && currentPrice <= t.targetPrice) reached = true;
+    if (t.type === "buy" && currentPrice >= t.targetPrice) reached = true;
+
+    if (reached) {
+      const msg =
+        `<b>🎯 Objetivo alcanzado</b>\n` +
+        `Trade: ${t.type === "sell" ? "Venta" : "Compra"} #${t.id}\n` +
+        `Precio actual: ${currentPrice.toFixed(2)} VES\n` +
+        `Objetivo: ${t.targetPrice.toFixed(2)} VES\n` +
+        `Cantidad: ${t.amount.toFixed(2)} USDT\n` +
+        `Cierra el trade desde el dashboard.`;
+
+      await sendTelegram(msg);
+    }
+  }
+}
+
 async function fetchBinanceDepth(): Promise<{
   buyPrice: number;
   sellPrice: number;
@@ -97,7 +147,10 @@ async function fetchBinanceDepth(): Promise<{
     };
   }
 
-  const [sellers, buyers] = await Promise.all([getAds("BUY"), getAds("SELL")]);
+  const [sellers, buyers] = await Promise.all([
+    getAds("BUY"),
+    getAds("SELL"),
+  ]);
 
   return {
     sellPrice: sellers.bestPrice,
@@ -110,7 +163,12 @@ async function fetchBinanceDepth(): Promise<{
 async function fetchRate(
   source: string,
   url: string,
-  extra?: { buyPrice?: number; sellPrice?: number; buyVolume?: number; sellVolume?: number }
+  extra?: {
+    buyPrice?: number;
+    sellPrice?: number;
+    buyVolume?: number;
+    sellVolume?: number;
+  }
 ): Promise<void> {
   const res = await fetch(url, {
     next: { revalidate: 0 },
@@ -124,7 +182,9 @@ async function fetchRate(
   const data: DolarflowResponse = await res.json();
 
   if (!data.exito || typeof data.precio !== "number") {
-    throw new Error(`Unexpected response from ${url}: ${JSON.stringify(data)}`);
+    throw new Error(
+      `Unexpected response from ${url}: ${JSON.stringify(data)}`
+    );
   }
 
   await prisma.rate.create({
@@ -141,12 +201,14 @@ async function fetchRate(
 
 export async function GET(): Promise<NextResponse> {
   const results: { source: string; status: string }[] = [];
+  let paraleloPrice = 0;
 
   for (const [source, url] of Object.entries(DOLARFLOW_URLS)) {
     try {
       if (source === "paralelo") {
         const depth = await fetchBinanceDepth();
         await fetchRate(source, url, depth);
+        paraleloPrice = depth.sellPrice || depth.buyPrice || 0;
       } else {
         await fetchRate(source, url);
       }
@@ -154,6 +216,14 @@ export async function GET(): Promise<NextResponse> {
     } catch (err) {
       console.error(`Failed to fetch ${source}:`, err);
       results.push({ source, status: "error" });
+    }
+  }
+
+  if (paraleloPrice > 0) {
+    try {
+      await evaluateTrades(paraleloPrice);
+    } catch {
+      console.warn("Trade evaluation failed");
     }
   }
 
