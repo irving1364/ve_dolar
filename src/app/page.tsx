@@ -16,31 +16,60 @@ function fmt(d: Date): string {
 }
 
 export default async function HomePage() {
-  const [paraleloRecords, recentRecords, latestParalelo] = await Promise.all([
-    prisma.rate.findMany({
-      where: { source: "paralelo" },
-      orderBy: { fetchedAt: "desc" },
-      take: 100,
-      select: { price: true, fetchedAt: true },
-    }),
-    prisma.rate.findMany({
-      orderBy: { fetchedAt: "desc" },
-      take: 20,
-      select: { source: true, price: true, buyPrice: true, sellPrice: true, buyVolume: true, sellVolume: true, fetchedAt: true },
-    }),
-    prisma.rate.findFirst({
-      where: { source: "paralelo" },
-      orderBy: { fetchedAt: "desc" },
-      select: { buyPrice: true, sellPrice: true, buyVolume: true, sellVolume: true },
-    }),
-  ]);
+  const [paraleloRecords, bcvRecords, recentRecords, latestParalelo] =
+    await Promise.all([
+      prisma.rate.findMany({
+        where: { source: "paralelo" },
+        orderBy: { fetchedAt: "desc" },
+        take: 100,
+        select: { price: true, fetchedAt: true },
+      }),
+      prisma.rate.findMany({
+        where: { source: "bcv" },
+        orderBy: { fetchedAt: "desc" },
+        take: 100,
+        select: { price: true, fetchedAt: true },
+      }),
+      prisma.rate.findMany({
+        orderBy: { fetchedAt: "desc" },
+        take: 20,
+        select: {
+          source: true,
+          price: true,
+          buyPrice: true,
+          sellPrice: true,
+          buyVolume: true,
+          sellVolume: true,
+          fetchedAt: true,
+        },
+      }),
+      prisma.rate.findFirst({
+        where: { source: "paralelo" },
+        orderBy: { fetchedAt: "desc" },
+        select: {
+          price: true,
+          buyPrice: true,
+          sellPrice: true,
+          buyVolume: true,
+          sellVolume: true,
+        },
+      }),
+    ]);
+
+  const latestBcv = await prisma.rate.findFirst({
+    where: { source: "bcv" },
+    orderBy: { fetchedAt: "desc" },
+    select: { price: true },
+  });
 
   const latest = latestParalelo
     ? {
+        price: latestParalelo.price,
         buyPrice: latestParalelo.buyPrice,
         sellPrice: latestParalelo.sellPrice,
         buyVolume: latestParalelo.buyVolume,
         sellVolume: latestParalelo.sellVolume,
+        bcvPrice: latestBcv?.price ?? null,
       }
     : null;
 
@@ -58,6 +87,10 @@ export default async function HomePage() {
       <Dashboard
         latestMarket={latest}
         paraleloHistory={paraleloRecords.map((r) => ({
+          price: r.price,
+          time: fmt(r.fetchedAt),
+        }))}
+        bcvHistory={bcvRecords.map((r) => ({
           price: r.price,
           time: fmt(r.fetchedAt),
         }))}
