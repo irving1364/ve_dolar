@@ -2,11 +2,6 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { prisma } from "@/lib/prisma";
 
-const groq = new OpenAI({
-  baseURL: "https://api.groq.com/openai/v1",
-  apiKey: process.env.GROQ_API_KEY ?? "",
-});
-
 export async function POST(): Promise<NextResponse> {
   try {
     if (!process.env.GROQ_API_KEY) {
@@ -15,6 +10,11 @@ export async function POST(): Promise<NextResponse> {
         { status: 500 }
       );
     }
+
+    const groq = new OpenAI({
+      baseURL: "https://api.groq.com/openai/v1",
+      apiKey: process.env.GROQ_API_KEY,
+    });
 
     const records = await prisma.rate.findMany({
       where: { source: "paralelo" },
