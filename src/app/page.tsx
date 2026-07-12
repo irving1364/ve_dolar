@@ -4,8 +4,15 @@ import Dashboard from "@/components/Dashboard";
 export const dynamic = "force-dynamic";
 
 function fmt(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const f = new Intl.DateTimeFormat("es-VE", {
+    timeZone: "America/Caracas",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  return f.format(d);
 }
 
 export default async function HomePage() {

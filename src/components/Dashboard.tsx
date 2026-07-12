@@ -276,10 +276,10 @@ export default function Dashboard({
                       Venta
                     </th>
                     <th className="px-4 py-3 font-medium text-gray-400 text-right">
-                      Vol. Compra
+                      Vol. Compra (USDT)
                     </th>
                     <th className="px-4 py-3 font-medium text-gray-400 text-right">
-                      Vol. Venta
+                      Vol. Venta (USDT)
                     </th>
                   </>
                 )}
