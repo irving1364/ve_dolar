@@ -77,6 +77,106 @@ async function evaluateTrades(currentPrice: number): Promise<void> {
   }
 }
 
+async function evaluateSignal(): Promise<void> {
+  const [latestParalelo, latestBcv] = await Promise.all([
+    prisma.rate.findFirst({
+      where: { source: "paralelo" },
+      orderBy: { fetchedAt: "desc" },
+    }),
+    prisma.rate.findFirst({
+      where: { source: "bcv" },
+      orderBy: { fetchedAt: "desc" },
+    }),
+  ]);
+
+  if (!latestParalelo || !latestBcv) return;
+
+  const spreadPct =
+    ((latestParalelo.price - latestBcv.price) / latestBcv.price) * 100;
+
+  const now = new Date();
+  const currentHour = parseInt(
+    new Intl.DateTimeFormat("en", {
+      timeZone: "America/Caracas",
+      hour: "numeric",
+      hour12: false,
+    }).format(now)
+  );
+
+  const fmt = new Intl.DateTimeFormat("es-VE", {
+    timeZone: "America/Caracas",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  const sellPrice = latestParalelo.sellPrice ?? 0;
+  const buyPrice = latestParalelo.buyPrice ?? 0;
+  const marketSpread = sellPrice - buyPrice;
+  const marketSpreadPct = sellPrice > 0 ? (marketSpread / sellPrice) * 100 : 100;
+  const isLiquid = marketSpreadPct < 0.3;
+  const isPeakHour = currentHour >= 7 && currentHour <= 10;
+  const isAfternoonDip = currentHour >= 13 && currentHour <= 15;
+
+  // === SELL SIGNAL: buen momento para vender USDT (spread alto, hora pico, líquido) ===
+  if (spreadPct > 1.5 && isPeakHour && isLiquid) {
+    const msg =
+      `<b>🟢 SEÑAL FUERTE — VENDE USDT</b>\n\n` +
+      `📊 Spread vs BCV: <b>${spreadPct.toFixed(2)}%</b>\n` +
+      `💰 Paralelo: <b>${latestParalelo.price.toFixed(2)} VES</b>\n` +
+      `🏛️ BCV: <b>${latestBcv.price.toFixed(2)} VES</b>\n` +
+      `💵 Mejor compra: <b>${buyPrice.toFixed(2)} VES</b>\n` +
+      `💶 Mejor venta: <b>${sellPrice.toFixed(2)} VES</b>\n` +
+      `📈 Vol. demanda: ${(latestParalelo.buyVolume ?? 0).toFixed(0)} USDT\n` +
+      `📉 Vol. oferta: ${(latestParalelo.sellVolume ?? 0).toFixed(0)} USDT\n\n` +
+      `⏰ ${fmt.format(now)} VET — Hora pico matutina con spread favorable y mercado líquido.\n\n` +
+      `👉 Es momento de vender USDT si tienes disponible.`;
+
+    await sendTelegram(msg);
+    return;
+  }
+
+  // === SELL SIGNAL (sin hora pico, pero spread alto y líquido) ===
+  if (spreadPct > 1.5 && isLiquid) {
+    const msg =
+      `<b>✅ SEÑAL — VENDE USDT</b>\n\n` +
+      `📊 Spread vs BCV: <b>${spreadPct.toFixed(2)}%</b>\n` +
+      `💰 Paralelo: <b>${latestParalelo.price.toFixed(2)} VES</b>\n` +
+      `🏛️ BCV: <b>${latestBcv.price.toFixed(2)} VES</b>\n` +
+      `💵 Mejor compra: <b>${buyPrice.toFixed(2)} VES</b>\n` +
+      `💶 Mejor venta: <b>${sellPrice.toFixed(2)} VES</b>\n` +
+      `📈 Vol. demanda: ${(latestParalelo.buyVolume ?? 0).toFixed(0)} USDT\n` +
+      `📉 Vol. oferta: ${(latestParalelo.sellVolume ?? 0).toFixed(0)} USDT\n\n` +
+      `⏰ ${fmt.format(now)} VET — Spread favorable con mercado líquido.\n\n` +
+      `👉 Considera vender USDT.`;
+
+    await sendTelegram(msg);
+    return;
+  }
+
+  // === BUY SIGNAL: buen momento para comprar USDT (spread bajo, precio cerca de BCV, o dip vespertino) ===
+  const trendingDown =
+    spreadPct < 1.2 && (isAfternoonDip || spreadPct < 0.8);
+
+  if (trendingDown && isLiquid) {
+    const msg =
+      `<b>🟣 SEÑAL — COMPRA USDT</b>\n\n` +
+      `📊 Spread vs BCV: <b>${spreadPct.toFixed(2)}%</b> (bajo — USDT cerca de su valor justo)\n` +
+      `💰 Paralelo: <b>${latestParalelo.price.toFixed(2)} VES</b>\n` +
+      `🏛️ BCV: <b>${latestBcv.price.toFixed(2)} VES</b>\n` +
+      `💵 Mejor compra: <b>${buyPrice.toFixed(2)} VES</b>\n` +
+      `💶 Mejor venta: <b>${sellPrice.toFixed(2)} VES</b>\n` +
+      `📈 Vol. demanda: ${(latestParalelo.buyVolume ?? 0).toFixed(0)} USDT\n` +
+      `📉 Vol. oferta: ${(latestParalelo.sellVolume ?? 0).toFixed(0)} USDT\n\n` +
+      `⏰ ${fmt.format(now)} VET — Spread bajo, Bs. fuerte vs USDT.\n\n` +
+      `👉 Es momento de comprar USDT si necesitas.`;
+
+    await sendTelegram(msg);
+  }
+}
+
 async function fetchBinanceDepth(): Promise<{
   buyPrice: number;
   sellPrice: number;
@@ -225,6 +325,13 @@ export async function GET(): Promise<NextResponse> {
     } catch {
       console.warn("Trade evaluation failed");
     }
+  }
+
+  // Evaluate market signal for buy/sell alerts
+  try {
+    await evaluateSignal();
+  } catch {
+    console.warn("Signal evaluation failed");
   }
 
   return NextResponse.json({

@@ -104,6 +104,31 @@ function getHourLabel(h: number): string {
   return `${h.toString().padStart(2, "0")}:00`;
 }
 
+type AdviceType = "sell" | "buy" | "analyze";
+
+const ADVICE_CONFIG: {
+  [K in AdviceType]: { label: string; color: string; hoverColor: string; icon: string }
+} = {
+  sell: {
+    label: "Venta",
+    color: "bg-amber-600",
+    hoverColor: "hover:bg-amber-500",
+    icon: "💰",
+  },
+  buy: {
+    label: "Compra",
+    color: "bg-emerald-600",
+    hoverColor: "hover:bg-emerald-500",
+    icon: "🟢",
+  },
+  analyze: {
+    label: "Analizar Trade",
+    color: "bg-violet-600",
+    hoverColor: "hover:bg-violet-500",
+    icon: "🔍",
+  },
+};
+
 export default function Dashboard({
   latestMarket: initialMarket,
   paraleloHistory: initialParalelo,
@@ -111,19 +136,31 @@ export default function Dashboard({
   recentRecords: initialRecords,
   trades: initialTrades,
 }: DashboardProps) {
-  const [advice, setAdvice] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [adviceState, setAdviceState] = useState<{
+    [K in AdviceType]: {
+      advice: string | null;
+      loading: boolean;
+      error: string | null;
+    };
+  }>({
+    sell: { advice: null, loading: false, error: null },
+    buy: { advice: null, loading: false, error: null },
+    analyze: { advice: null, loading: false, error: null },
+  });
   const [showVolume, setShowVolume] = useState(false);
   const [patterns, setPatterns] = useState<HourlyPattern[]>([]);
 
   // Time range & pagination state
   const [timeRange, setTimeRange] = useState<TimeRange>("week");
   const [isFetching, setIsFetching] = useState(false);
-  const [latestMarket, setLatestMarket] = useState<MarketSnapshot | null>(initialMarket);
-  const [paraleloHistory, setParaleloHistory] = useState<RatePoint[]>(initialParalelo);
+  const [latestMarket, setLatestMarket] = useState<MarketSnapshot | null>(
+    initialMarket
+  );
+  const [paraleloHistory, setParaleloHistory] =
+    useState<RatePoint[]>(initialParalelo);
   const [bcvHistory, setBcvHistory] = useState<RatePoint[]>(initialBcv);
-  const [recentRecords, setRecentRecords] = useState<Record[]>(initialRecords);
+  const [recentRecords, setRecentRecords] =
+    useState<Record[]>(initialRecords);
   const [recordsPage, setRecordsPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [trades, setTrades] = useState<TradeData[]>(initialTrades);
@@ -207,7 +244,8 @@ export default function Dashboard({
   const trend =
     patterns.length > 0 && currentPattern
       ? currentPattern.avgPrice >
-        (patterns.find((p) => p.hour === (currentHour + 23) % 24)?.avgPrice ?? 0)
+        (patterns.find((p) => p.hour === (currentHour + 23) % 24)
+          ?.avgPrice ?? 0)
         ? "subiendo"
         : "bajando"
       : null;
@@ -249,26 +287,38 @@ export default function Dashboard({
     }
   }
 
-  const requestAdvice = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    setAdvice(null);
+  const requestAdvice = useCallback(async (type: AdviceType) => {
+    setAdviceState((prev) => ({
+      ...prev,
+      [type]: { advice: null, loading: true, error: null },
+    }));
 
     try {
-      const res = await fetch("/api/advice", { method: "POST" });
+      const res = await fetch("/api/advice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type }),
+      });
       const data = await res.json();
 
       if (!res.ok) {
         throw new Error(data.error ?? "Error desconocido");
       }
 
-      setAdvice(data.advice);
+      setAdviceState((prev) => ({
+        ...prev,
+        [type]: { advice: data.advice, loading: false, error: null },
+      }));
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Error al conectar con la IA"
-      );
-    } finally {
-      setLoading(false);
+      setAdviceState((prev) => ({
+        ...prev,
+        [type]: {
+          advice: null,
+          loading: false,
+          error:
+            err instanceof Error ? err.message : "Error al conectar con la IA",
+        },
+      }));
     }
   }, []);
 
@@ -308,6 +358,8 @@ export default function Dashboard({
 
   // Chart height based on data volume
   const chartHeight = paraleloHistory.length > 200 ? 400 : 300;
+
+
 
   return (
     <div className="space-y-8">
@@ -427,11 +479,11 @@ export default function Dashboard({
           {/* Time Range Selector */}
           <div className="flex items-center gap-2">
             {isFetching && (
-              <span className="text-xs text-gray-500 animate-pulse">
+              <span className="animate-pulse text-xs text-gray-500">
                 Cargando…
               </span>
             )}
-            <div className="flex rounded-lg border border-gray-700 bg-gray-800 overflow-hidden">
+            <div className="flex overflow-hidden rounded-lg border border-gray-700 bg-gray-800">
               {TIME_RANGE_OPTIONS.map((opt) => (
                 <button
                   key={opt.value}
@@ -439,7 +491,7 @@ export default function Dashboard({
                   className={`px-3 py-1.5 text-xs font-medium transition ${
                     timeRange === opt.value
                       ? "bg-emerald-600 text-white"
-                      : "text-gray-400 hover:text-white hover:bg-gray-700"
+                      : "text-gray-400 hover:bg-gray-700 hover:text-white"
                   }`}
                 >
                   {opt.label}
@@ -510,36 +562,106 @@ export default function Dashboard({
         </div>
       </section>
 
-      {/* ═══ ADVICE SECTION ═══ */}
+      {/* ═══ ASESORÍA IA — 3 BOTONES ═══ */}
       <section>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold text-white">
             Asesoría de Arbitraje IA
           </h2>
-          <button
-            onClick={requestAdvice}
-            disabled={loading}
-            className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {loading ? "Analizando…" : "Pedir recomendación"}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {(Object.entries(ADVICE_CONFIG) as [AdviceType, typeof ADVICE_CONFIG.sell][]).map(
+              ([type, cfg]) => {
+                const state = adviceState[type];
+                return (
+                  <button
+                    key={type}
+                    onClick={() => requestAdvice(type)}
+                    disabled={state.loading}
+                    className={`rounded-lg ${cfg.color} px-4 py-2 text-sm font-medium text-white transition ${cfg.hoverColor} disabled:cursor-not-allowed disabled:opacity-50 flex items-center gap-1.5`}
+                  >
+                    {state.loading ? (
+                      <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    ) : (
+                      <span>{cfg.icon}</span>
+                    )}
+                    {state.loading
+                      ? "Analizando…"
+                      : cfg.label}
+                  </button>
+                );
+              }
+            )}
+          </div>
         </div>
 
-        {error && (
-          <div className="rounded-lg border border-red-800 bg-red-950/50 p-4 text-sm text-red-400">
-            {error}
-          </div>
-        )}
+        {/* Advice results container */}
+        <div className="space-y-4">
+          {(Object.entries(adviceState) as [AdviceType, typeof adviceState.sell][]).map(
+            ([type, state]) => {
+              if (!state.advice && !state.error && !state.loading)
+                return null;
 
-        {advice && (
-          <div className="rounded-xl border border-emerald-800/50 bg-emerald-950/20 p-5 text-sm leading-relaxed text-gray-200">
-            {advice.split("\n").map((line, i) => (
-              <p key={i} className={i > 0 ? "mt-2" : ""}>
-                {line}
-              </p>
-            ))}
-          </div>
-        )}
+              const cfg = ADVICE_CONFIG[type];
+              const borderColor =
+                type === "sell"
+                  ? "border-amber-800/50"
+                  : type === "buy"
+                    ? "border-emerald-800/50"
+                    : "border-violet-800/50";
+              const bgColor =
+                type === "sell"
+                  ? "bg-amber-950/20"
+                  : type === "buy"
+                    ? "bg-emerald-950/20"
+                    : "bg-violet-950/20";
+
+              return (
+                <div key={type}>
+                  {state.error && (
+                    <div className="rounded-lg border border-red-800 bg-red-950/50 p-4 text-sm text-red-400">
+                      {state.error}
+                    </div>
+                  )}
+
+                  {state.loading && (
+                    <div
+                      className={`animate-pulse rounded-xl border ${borderColor} ${bgColor} p-5`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">{cfg.icon}</span>
+                        <span className="text-sm font-medium text-gray-300">
+                          {cfg.label} — Analizando datos de mercado…
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {state.advice && (
+                    <div
+                      className={`rounded-xl border ${borderColor} ${bgColor} p-5 text-sm leading-relaxed text-gray-200`}
+                    >
+                      <div className="mb-3 flex items-center gap-2">
+                        <span className="text-lg">{cfg.icon}</span>
+                        <span className="text-sm font-semibold text-white">
+                          {cfg.label === "Venta"
+                            ? "💡 ¿Vender USDT?"
+                            : cfg.label === "Compra"
+                              ? "💡 ¿Comprar USDT?"
+                              : "💡 Análisis de tus trades"}
+                        </span>
+                      </div>
+                      {state.advice.split("\n").map((line, i) => (
+                        <p key={i} className={i > 0 ? "mt-2" : ""}>
+                          {line}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+          )}
+        </div>
       </section>
 
       {/* ═══ HOURLY PATTERNS TABLE ═══ */}
@@ -640,7 +762,7 @@ export default function Dashboard({
           </h2>
           <div className="flex items-center gap-2">
             {isFetching && (
-              <span className="text-xs text-gray-500 animate-pulse">
+              <span className="animate-pulse text-xs text-gray-500">
                 Cargando…
               </span>
             )}
