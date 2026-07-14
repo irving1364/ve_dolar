@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
       where: { source: "paralelo", fetchedAt: { gte: since } },
       orderBy: { fetchedAt: "desc" },
       take,
-      select: { price: true, fetchedAt: true },
+      select: { price: true, buyVolume: true, sellVolume: true, fetchedAt: true },
     }),
     prisma.rate.findMany({
       where: { source: "bcv", fetchedAt: { gte: since } },
@@ -129,6 +129,8 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     paraleloHistory: paraleloRecords.map((r) => ({
       price: r.price,
+      buyVolume: r.buyVolume ?? undefined,
+      sellVolume: r.sellVolume ?? undefined,
       time: fmt(r.fetchedAt),
     })),
     bcvHistory: bcvRecords.map((r) => ({

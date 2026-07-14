@@ -96,52 +96,86 @@ async function getMarketContext() {
 }
 
 function buildSellPrompt(ctx: Awaited<ReturnType<typeof getMarketContext>>): string {
-  return `Eres un analista experto en arbitraje del mercado venezolano. Tu tarea es analizar si es un BUEN MOMENTO PARA VENDER USDT (convertir USDT a Bs.).
+  const avgPrice =
+    ctx.records.length > 0
+      ? ctx.records.reduce((s, r) => s + r.price, 0) / ctx.records.length
+      : 0;
+  const maxPrice = ctx.records.length > 0 ? Math.max(...ctx.records.map((r) => r.price)) : 0;
+  const minPrice = ctx.records.length > 0 ? Math.min(...ctx.records.map((r) => r.price)) : 0;
+  const pctFromAvg = avgPrice > 0 ? ((ctx.latest?.price ?? 0) - avgPrice) / avgPrice * 100 : 0;
 
-Contexto del mercado:
-- La tasa BCV (oficial) suele estar por debajo de la tasa paralela.
-- Cuando el spread (diferencia paralelo vs BCV) es alto (>1.5%), conviene vender USDT porque el mercado paralelo paga más que la tasa oficial.
-- En las mañanas (7:00 - 10:00 AM VET) hay mayor volumen de venta de USDT, lo que puede indicar presión bajista.
+  return `Eres un analista experto en trading de USDT/VES en el mercado paralelo venezolano (Binance P2P). Tu tarea es analizar si es un BUEN MOMENTO PARA VENDER USDT (cambiar USDT → Bs.) pensando en vender caro hoy y recomprar barato después.
 
+⚠️ IMPORTANTE: NO te bases en la tasa BCV ni en spreads gubernamentales. Tu análisis debe basarse exclusivamente en:
+- El precio actual del USDT en el mercado paralelo
+- Los volúmenes de negociación en Binance P2P
+- La tendencia del precio en las últimas horas
+
+CONTEXTO DEL MERCADO:
 ${ctx.marketDataParts.join("\n\n")}
 
-Historial reciente de la tasa paralela (últimas ~48 horas, cada 30 min):
+📈 ESTADÍSTICAS DE PRECIO (últimas ~48hs):
+• Precio actual: ${ctx.latest?.price.toFixed(2) ?? "?"} VES
+• Promedio histórico: ${avgPrice.toFixed(2)} VES
+• Máximo reciente: ${maxPrice.toFixed(2)} VES
+• Mínimo reciente: ${minPrice.toFixed(2)} VES
+• Diferencia vs promedio: ${pctFromAvg >= 0 ? "+" : ""}${pctFromAvg.toFixed(2)}%
+
+Historial detallado:
 ${ctx.historyData}
 
 Con base en estos datos, responde EXACTAMENTE en este formato sin desviarte:
 
-📊 **Análisis de Venta**: (2 líneas máximo sobre si es buen momento para vender USDT)
-💡 **Recomendación**: (VENDER AHORA o ESPERAR, con argumentos concretos usando los datos)
-💰 **Precio estimado de venta**: (qué precio podrías obtener según los datos actuales)
-🎯 **Objetivo de recompra**: (sugerencia de precio al que recomprar USDT después si vendes)
-⏰ **Contexto horario**: (cómo influye la hora actual en tu decisión)
-⚠️ **Nota**: (consideraciones adicionales relevantes)
+📊 **Análisis de Venta**: (el precio actual está alto o bajo comparado con el histórico reciente?)
+💡 **Recomendación**: (VENDER AHORA o ESPERAR — si el precio está alto vs el promedio, sugiere vender; si está bajo, esperar a que suba)
+💰 **Precio estimado de venta**: (a qué precio podrías vender hoy, basado en la mejor oferta de compra disponible)
+🎯 **Objetivo de recompra**: (precio estimado al que podrías recomprar los USDT después, basado en el mínimo reciente)
+📊 **Volumen de demanda**: (hay suficiente volumen de compradores como para vender rápido?)
+⏰ **Contexto horario**: (cómo influye la hora actual — mañanas suele haber más vendedores, tardes más compradores)
+⚠️ **Nota**: (consideraciones adicionales relevantes, ej. si el volumen es bajo mejor esperar)
 
 Máximo 220 palabras en total. Responde en español.`;
 }
 
 function buildBuyPrompt(ctx: Awaited<ReturnType<typeof getMarketContext>>): string {
-  return `Eres un analista experto en arbitraje del mercado venezolano. Tu tarea es analizar si es un BUEN MOMENTO PARA COMPRAR USDT (convertir Bs. a USDT).
+  const avgPrice =
+    ctx.records.length > 0
+      ? ctx.records.reduce((s, r) => s + r.price, 0) / ctx.records.length
+      : 0;
+  const maxPrice = ctx.records.length > 0 ? Math.max(...ctx.records.map((r) => r.price)) : 0;
+  const minPrice = ctx.records.length > 0 ? Math.min(...ctx.records.map((r) => r.price)) : 0;
+  const pctFromAvg = avgPrice > 0 ? ((ctx.latest?.price ?? 0) - avgPrice) / avgPrice * 100 : 0;
 
-Contexto del mercado:
-- La tasa BCV (oficial) suele estar por debajo de la tasa paralela.
-- Cuando el spread (diferencia paralelo vs BCV) es bajo (<1.5%), el USDT está más cerca de su valor "justo" y puede ser buen momento de compra.
-- En las mañanas (7:00 - 10:00 AM VET) suele haber mayor volumen de venta de USDT porque la gente vende para comprar dólares en bancos a tasa BCV, lo que tiende a BAJAR el precio del USDT (buen momento para comprar barato).
-- Un spread de mercado (diferencia entre mejor compra y mejor venta) angosto indica mercado líquido y eficiente.
+  return `Eres un analista experto en trading de USDT/VES en el mercado paralelo venezolano (Binance P2P). Tu tarea es analizar si es un BUEN MOMENTO PARA COMPRAR USDT (cambiar Bs. → USDT) pensando en comprar barato hoy y vender más caro después.
 
+⚠️ IMPORTANTE: NO te bases en la tasa BCV ni en spreads gubernamentales. Tu análisis debe basarse exclusivamente en:
+- El precio actual del USDT en el mercado paralelo
+- Los volúmenes de negociación en Binance P2P
+- La tendencia del precio en las últimas horas
+
+CONTEXTO DEL MERCADO:
 ${ctx.marketDataParts.join("\n\n")}
 
-Historial reciente de la tasa paralela (últimas ~48 horas, cada 30 min):
+📈 ESTADÍSTICAS DE PRECIO (últimas ~48hs):
+• Precio actual: ${ctx.latest?.price.toFixed(2) ?? "?"} VES
+• Promedio histórico: ${avgPrice.toFixed(2)} VES
+• Máximo reciente: ${maxPrice.toFixed(2)} VES
+• Mínimo reciente: ${minPrice.toFixed(2)} VES
+• Diferencia vs promedio: ${pctFromAvg >= 0 ? "+" : ""}${pctFromAvg.toFixed(2)}%
+
+Historial detallado:
 ${ctx.historyData}
 
 Con base en estos datos, responde EXACTAMENTE en este formato sin desviarte:
 
-📊 **Análisis de Compra**: (2 líneas máximo sobre si es buen momento para comprar USDT)
-💡 **Recomendación**: (COMPRAR AHORA o ESPERAR, con argumentos concretos)
-💰 **Precio estimado de compra**: (qué precio podrías obtener hoy)
-📉 **Tendencia**: (el precio está subiendo, bajando o estable en las últimas horas)
-⏰ **Contexto horario**: (cómo influye la hora actual en tu decisión)
-⚠️ **Nota**: (consideraciones adicionales, ej. volumen disponible)
+📊 **Análisis de Compra**: (el precio actual está barato o caro comparado con el histórico reciente?)
+💡 **Recomendación**: (COMPRAR AHORA o ESPERAR — si el precio está bajo vs el promedio, sugiere comprar; si está alto, esperar a que baje)
+💰 **Precio estimado de compra**: (a qué precio podrías comprar hoy, basado en la mejor oferta de venta disponible)
+🎯 **Objetivo de venta futura**: (precio estimado al que podrías vender después, basado en el máximo reciente)
+📊 **Volumen de oferta**: (hay suficiente volumen de vendedores como para comprar rápido?)
+📉 **Tendencia**: (el precio está subiendo, bajando o estable en las últimas horas — si sube, compra pronto; si baja, espera)
+⏰ **Contexto horario**: (cómo influye la hora actual — mañanas suele haber más vendedores = mejor para comprar barato)
+⚠️ **Nota**: (consideraciones adicionales, ej. si el volumen de oferta es bajo mejor esperar)
 
 Máximo 220 palabras en total. Responde en español.`;
 }
@@ -165,13 +199,16 @@ function buildAnalyzePrompt(
     )
     .join("\n");
 
-  return `Eres un analista experto en arbitraje del mercado venezolano. Tu tarea es analizar los TRADES ACTIVOS que el usuario tiene actualmente y dar recomendaciones personalizadas.
+  return `Eres un analista experto en trading de USDT/VES en el mercado paralelo venezolano (Binance P2P). Tu tarea es analizar los TRADES ACTIVOS del usuario y dar recomendaciones personalizadas basadas en el precio del paralelo y los volúmenes.
+
+⚠️ IMPORTANTE: NO uses la tasa BCV ni spreads oficiales como referencia. El análisis debe basarse en el precio del USDT en el mercado paralelo y los volúmenes de negociación.
 
 Contexto del mercado:
-- La tasa BCV (oficial) suele estar por debajo de la tasa paralela.
-- Para trades de VENTA: vendiste USDT esperando que el baje para recomprar más barato.
-- Para trades de COMPRA: compraste USDT esperando que suba para vender más caro.
+- Para trades de VENTA: el usuario vendió USDT esperando que el precio baje para recomprar más barato.
+- Para trades de COMPRA: el usuario compró USDT esperando que suba para vender más caro.
+- La idea es COMPRAR BARATO y VENDER CARO en el mercado paralelo.
 
+CONTEXTO DEL MERCADO:
 ${ctx.marketDataParts.join("\n\n")}
 
 Historial reciente de la tasa paralela (últimas ~48 horas, cada 30 min):
@@ -182,24 +219,26 @@ ${tradesText || "No hay trades activos actualmente."}
 
 Con base en los datos de mercado y los trades activos, responde EXACTAMENTE en este formato sin desviarte:
 
-📊 **Análisis de Mercado**: (2 líneas sobre la tendencia actual)
+📊 **Análisis de Mercado**: (2 líneas sobre la tendencia actual del precio paralelo y los volúmenes)
 ${openTrades.length > 0 ? `
 📋 **Evaluación de Trades Activos**:
 ${openTrades.map((t) => {
   const currentPrice = ctx.latest?.price ?? 0;
+  const avg = ctx.records.reduce((s, r) => s + r.price, 0) / ctx.records.length;
   const diff = t.type === "sell"
     ? ((t.price - currentPrice) / t.price) * 100
     : ((currentPrice - t.price) / t.price) * 100;
-  return `  • Trade #${t.id} (${t.type === "sell" ? "VENTA" : "COMPRA"}): ${diff >= 0 ? "✅ " : "⚠️ "}Actualmente estás ${diff >= 0 ? "ganando" : "perdiendo"} ~${Math.abs(diff).toFixed(2)}%. ${t.targetPrice ? `Tu objetivo es ${t.targetPrice.toFixed(2)} VES.` : ""}`;
+  const priceContext = currentPrice > t.price ? "el precio está más arriba que cuando operaste" : "el precio está más abajo que cuando operaste";
+  return `  • Trade #${t.id} (${t.type === "sell" ? "VENTA" : "COMPRA"}): ${diff >= 0 ? "✅ " : "⚠️ "}Actualmente estás ${diff >= 0 ? "ganando" : "perdiendo"} ~${Math.abs(diff).toFixed(2)}%. ${priceContext}. ${t.targetPrice ? `Tu objetivo es ${t.targetPrice.toFixed(2)} VES (promedio actual: ${avg.toFixed(2)} VES).` : ""}`;
 }).join("\n")}
 ` : ""}
 💡 **Recomendación Personalizada**:
 ${openTrades.length > 0
-  ? `• ¿Cerrar algún trade ahora? ¿Esperar? ¿Ajustar objetivos?`
-  : "• Consideraciones generales si decides abrir un trade."}
-🎯 **Sugerencia de precio objetivo**: (basado en los patrones actuales)
-⚠️ **Riesgos**: (factores que podrían afectar negativamente tus trades)
-📌 **Próximo movimiento sugerido**: (acción concreta recomendada)
+  ? `• Para cada trade: ¿cerrar ahora (take profit / stop loss), ajustar objetivo, o esperar? Justifica con el precio actual vs el histórico.`
+  : "• Consideraciones sobre si deberías abrir un trade ahora, basado en si el precio está alto o bajo."}
+🎯 **Sugerencia de precio objetivo**: (basado en los máximos/mínimos recientes del mercado paralelo)
+⚠️ **Riesgos**: (factores como baja liquidez, alta volatilidad, o tendencia contraria)
+📌 **Próximo movimiento sugerido**: (acción concreta: cerrar, esperar, ajustar, o abrir nuevo trade)
 
 Máximo 280 palabras en total. Responde en español.`;
 }

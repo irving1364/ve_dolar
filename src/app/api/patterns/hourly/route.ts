@@ -22,7 +22,7 @@ export async function GET(): Promise<NextResponse> {
 
     const hourlyMap: Record<
       number,
-      { prices: number[]; volumes: number[]; count: number }
+      { prices: number[]; buyVolumes: number[]; sellVolumes: number[]; count: number }
     > = {};
 
     for (const r of records) {
@@ -35,11 +35,12 @@ export async function GET(): Promise<NextResponse> {
       );
 
       if (!hourlyMap[hour]) {
-        hourlyMap[hour] = { prices: [], volumes: [], count: 0 };
+        hourlyMap[hour] = { prices: [], buyVolumes: [], sellVolumes: [], count: 0 };
       }
 
       hourlyMap[hour].prices.push(r.price);
-      if (r.buyVolume) hourlyMap[hour].volumes.push(r.buyVolume);
+      if (r.buyVolume) hourlyMap[hour].buyVolumes.push(r.buyVolume);
+      if (r.sellVolume) hourlyMap[hour].sellVolumes.push(r.sellVolume);
       hourlyMap[hour].count++;
     }
 
@@ -47,14 +48,32 @@ export async function GET(): Promise<NextResponse> {
       .map(([hour, data]) => {
         const avgPrice =
           data.prices.reduce((a, b) => a + b, 0) / data.prices.length;
-        const avgVolume =
-          data.volumes.length > 0
-            ? data.volumes.reduce((a, b) => a + b, 0) / data.volumes.length
+        const avgBuyVolume =
+          data.buyVolumes.length > 0
+            ? data.buyVolumes.reduce((a, b) => a + b, 0) /
+              data.buyVolumes.length
             : 0;
+        const avgSellVolume =
+          data.sellVolumes.length > 0
+            ? data.sellVolumes.reduce((a, b) => a + b, 0) /
+              data.sellVolumes.length
+            : 0;
+        const totalBuyVolume = data.buyVolumes.reduce(
+          (a, b) => a + b,
+          0
+        );
+        const totalSellVolume = data.sellVolumes.reduce(
+          (a, b) => a + b,
+          0
+        );
         return {
           hour: parseInt(hour),
           avgPrice: parseFloat(avgPrice.toFixed(2)),
-          avgVolume: parseFloat(avgVolume.toFixed(0)),
+          avgVolume: parseFloat(avgBuyVolume.toFixed(0)),
+          avgBuyVolume: parseFloat(avgBuyVolume.toFixed(0)),
+          avgSellVolume: parseFloat(avgSellVolume.toFixed(0)),
+          totalBuyVolume: parseFloat(totalBuyVolume.toFixed(0)),
+          totalSellVolume: parseFloat(totalSellVolume.toFixed(0)),
           count: data.count,
           minPrice: parseFloat(Math.min(...data.prices).toFixed(2)),
           maxPrice: parseFloat(Math.max(...data.prices).toFixed(2)),

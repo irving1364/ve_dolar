@@ -5,6 +5,8 @@ import TradePanel from "./TradePanel";
 import {
   LineChart,
   Line,
+  BarChart,
+  Bar,
   ReferenceLine,
   XAxis,
   YAxis,
@@ -16,6 +18,8 @@ import {
 interface RatePoint {
   price: number;
   time: string;
+  buyVolume?: number;
+  sellVolume?: number;
 }
 
 interface Record {
@@ -41,6 +45,10 @@ interface HourlyPattern {
   hour: number;
   avgPrice: number;
   avgVolume: number;
+  avgBuyVolume: number;
+  avgSellVolume: number;
+  totalBuyVolume: number;
+  totalSellVolume: number;
   count: number;
   minPrice: number;
   maxPrice: number;
@@ -250,37 +258,106 @@ export default function Dashboard({
         : "bajando"
       : null;
 
+  // ── Mejores horas para comprar/vender basado en perfil de volumen ──
+  const bestHours = patterns.length > 0
+    ? (() => {
+        const maxBuy = Math.max(...patterns.map(p => p.avgBuyVolume), 1);
+        const maxSell = Math.max(...patterns.map(p => p.avgSellVolume), 1);
+        const minPriceAll = Math.min(...patterns.map(p => p.avgPrice));
+        const maxPriceAll = Math.max(...patterns.map(p => p.avgPrice));
+        const priceRange = maxPriceAll - minPriceAll || 1;
+
+        const scored = patterns.map(p => {
+          const buyVolRatio = p.avgBuyVolume / maxBuy;
+          const sellVolRatio = p.avgSellVolume / maxSell;
+          const priceHighRatio = (p.avgPrice - minPriceAll) / priceRange;
+          const priceLowRatio = 1 - priceHighRatio;
+
+          // Sell score: high demand (buy volume) + price near top
+          const sellScore = buyVolRatio * 0.5 + priceHighRatio * 0.5;
+          // Buy score: high supply (sell volume) + price near bottom
+          const buyScore = sellVolRatio * 0.5 + priceLowRatio * 0.5;
+
+          return { ...p, sellScore, buyScore };
+        });
+
+        const bestSell = [...scored]
+          .sort((a, b) => b.sellScore - a.sellScore)
+          .slice(0, 3)
+          .map(h => h.hour);
+        const bestBuy = [...scored]
+          .sort((a, b) => b.buyScore - a.buyScore)
+          .slice(0, 3)
+          .map(h => h.hour);
+
+        return { scored, bestSell: new Set(bestSell), bestBuy: new Set(bestBuy) };
+      })()
+    : null;
+
+  const bestSellSet = bestHours?.bestSell ?? new Set<number>();
+  const bestBuySet = bestHours?.bestBuy ?? new Set<number>();
+  const scoredPatterns = bestHours?.scored ?? [];
+
+  // Compute average price from history for signal generation
+  const avgParaleloPrice =
+    paraleloHistory.length > 0
+      ? paraleloHistory.reduce((s, p) => s + p.price, 0) /
+        paraleloHistory.length
+      : 0;
+  const pctAboveAvg =
+    avgParaleloPrice > 0 && latestMarket
+      ? ((latestMarket.price - avgParaleloPrice) / avgParaleloPrice) * 100
+      : 0;
+  const buyVol = latestMarket?.buyVolume ?? 0;
+  const sellVol = latestMarket?.sellVolume ?? 0;
+  const isLiquid =
+    marketSpreadPct !== null ? marketSpreadPct < 0.3 : false;
+
   let signal: { text: string; color: string; emoji: string } = {
     text: "Esperar",
     color: "text-gray-500",
     emoji: "⏸️",
   };
 
-  if (bcvLatest && latestMarket && marketSpreadPct !== null) {
-    const isPeakHour = currentHour >= 7 && currentHour <= 10;
-    const isLiquid = marketSpreadPct < 0.3;
-
-    if (spreadPct! > 1.5 && isPeakHour && isLiquid) {
+  if (latestMarket && paraleloHistory.length > 10) {
+    // Sell signal: price significantly above average + good demand
+    if (pctAboveAvg > 0.8 && buyVol > 5000 && isLiquid) {
       signal = {
-        text: "Fuerte señal — Vende USDT",
+        text: "🟢 VENDE USDT — Precio alto vs promedio",
         color: "text-emerald-400",
         emoji: "🟢",
       };
-    } else if (spreadPct! > 1.5 && isLiquid) {
+    } else if (pctAboveAvg > 0.5 && buyVol > 3000) {
       signal = {
-        text: "Señal de venta — Spread favorable",
+        text: "✅ Vende — Precio por encima del promedio",
         color: "text-emerald-400",
         emoji: "✅",
       };
-    } else if (spreadPct! > 1) {
+    }
+    // Buy signal: price significantly below average + good supply
+    else if (pctAboveAvg < -0.5 && sellVol > 5000 && isLiquid) {
       signal = {
-        text: "Observar — Spread moderado",
+        text: "🟣 COMPRA USDT — Precio bajo vs promedio",
+        color: "text-violet-400",
+        emoji: "🟣",
+      };
+    } else if (pctAboveAvg < -0.3 && sellVol > 3000) {
+      signal = {
+        text: "✅ Compra — Precio por debajo del promedio",
+        color: "text-violet-400",
+        emoji: "✅",
+      };
+    }
+    // Neutral/moderate signals
+    else if (Math.abs(pctAboveAvg) < 0.3) {
+      signal = {
+        text: "Estable — Precio cerca del promedio",
         color: "text-yellow-400",
-        emoji: "👀",
+        emoji: "⚖️",
       };
     } else {
       signal = {
-        text: "Esperar — Spread bajo",
+        text: "Esperar — Sin señal clara",
         color: "text-gray-500",
         emoji: "⏸️",
       };
@@ -418,23 +495,25 @@ export default function Dashboard({
 
             <div
               className={`rounded-xl border p-4 ${
-                signal.text.includes("Vende")
+                signal.emoji === "🟢"
                   ? "border-emerald-800/50 bg-emerald-950/20"
-                  : signal.text.includes("Observar")
-                    ? "border-yellow-800/50 bg-yellow-950/20"
-                    : "border-gray-800 bg-gray-900"
+                  : signal.emoji === "🟣"
+                    ? "border-violet-800/50 bg-violet-950/20"
+                    : signal.emoji === "⚖️"
+                      ? "border-yellow-800/50 bg-yellow-950/20"
+                      : "border-gray-800 bg-gray-900"
               }`}
             >
               <p className="text-xs font-medium uppercase tracking-wider text-gray-500">
-                Señal de Arbitraje
+                Señal de Trading
               </p>
               <p className={`mt-1 text-lg font-bold ${signal.color}`}>
                 {signal.emoji} {signal.text}
               </p>
               <p className="mt-0.5 text-xs text-gray-500">
-                {bcvLatest
-                  ? `Spread BCV: ${spreadPct?.toFixed(2)}%`
-                  : "Esperando datos BCV"}
+                {avgParaleloPrice > 0
+                  ? `Prom. 48h: ${fmtNum(avgParaleloPrice)} VES · Actual: ${fmtNum(latestMarket?.price ?? 0)} VES`
+                  : "Calculando promedio…"}
               </p>
             </div>
           </div>
@@ -507,57 +586,124 @@ export default function Dashboard({
               tasas.
             </p>
           ) : (
-            <ResponsiveContainer width="100%" height={chartHeight}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                <XAxis
-                  dataKey="time"
-                  tick={{ fill: "#9CA3AF", fontSize: 11 }}
-                  tickLine={false}
-                  interval="preserveStartEnd"
-                />
-                <YAxis
-                  domain={["auto", "auto"]}
-                  tick={{ fill: "#9CA3AF", fontSize: 11 }}
-                  tickLine={false}
-                  tickFormatter={(v: number) => `${v.toFixed(0)}`}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#1F2937",
-                    border: "1px solid #374151",
-                    borderRadius: 8,
-                    color: "#F9FAFB",
-                  }}
-                  formatter={(value) => [
-                    `${Number(value).toFixed(2)} VES`,
-                    "Paralelo",
-                  ]}
-                />
-                {bcvLatest && (
-                  <ReferenceLine
-                    y={bcvLatest}
-                    stroke="#3B82F6"
-                    strokeDasharray="6 4"
-                    strokeWidth={1.5}
-                    label={{
-                      value: `BCV ${bcvLatest.toFixed(2)}`,
-                      fill: "#3B82F6",
-                      fontSize: 11,
-                      position: "insideTopLeft",
-                    }}
+            <>
+              {/* ═══ PRICE CHART ═══ */}
+              <ResponsiveContainer width="100%" height={chartHeight}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                  <XAxis
+                    dataKey="time"
+                    tick={{ fill: "#9CA3AF", fontSize: 11 }}
+                    tickLine={false}
+                    interval="preserveStartEnd"
                   />
-                )}
-                <Line
-                  type="monotone"
-                  dataKey="price"
-                  stroke="#10B981"
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 4, fill: "#10B981" }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+                  <YAxis
+                    domain={["auto", "auto"]}
+                    tick={{ fill: "#9CA3AF", fontSize: 11 }}
+                    tickLine={false}
+                    tickFormatter={(v: number) => `${v.toFixed(0)}`}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "#1F2937",
+                      border: "1px solid #374151",
+                      borderRadius: 8,
+                      color: "#F9FAFB",
+                    }}
+                    formatter={(value) => [
+                      `${Number(value).toFixed(2)} VES`,
+                      "Paralelo",
+                    ]}
+                  />
+                  {bcvLatest && (
+                    <ReferenceLine
+                      y={bcvLatest}
+                      stroke="#3B82F6"
+                      strokeDasharray="6 4"
+                      strokeWidth={1.5}
+                      label={{
+                        value: `BCV ${bcvLatest.toFixed(2)}`,
+                        fill: "#3B82F6",
+                        fontSize: 11,
+                        position: "insideTopLeft",
+                      }}
+                    />
+                  )}
+                  <Line
+                    type="monotone"
+                    dataKey="price"
+                    stroke="#10B981"
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4, fill: "#10B981" }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+
+              {/* ═══ VOLUME CHART ═══ */}
+              <div className="mt-2">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="flex items-center gap-4 text-xs text-gray-500">
+                    <span className="flex items-center gap-1.5">
+                      <span className="inline-block h-2.5 w-2.5 rounded-sm bg-emerald-500/70" />
+                      Vol. Compra (demanda)
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-500/70" />
+                      Vol. Venta (oferta)
+                    </span>
+                  </div>
+                </div>
+                <ResponsiveContainer width="100%" height={120}>
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis
+                      dataKey="time"
+                      tick={{ fill: "#9CA3AF", fontSize: 10 }}
+                      tickLine={false}
+                      interval="preserveStartEnd"
+                    />
+                    <YAxis
+                      tick={{ fill: "#9CA3AF", fontSize: 10 }}
+                      tickLine={false}
+                      tickFormatter={(v: number) =>
+                        v >= 1000 ? `${(v / 1000).toFixed(0)}K` : `${v.toFixed(0)}`
+                      }
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "#1F2937",
+                        border: "1px solid #374151",
+                        borderRadius: 8,
+                        color: "#F9FAFB",
+                        fontSize: 12,
+                      }}
+                      formatter={(value, name) => {
+                        const vol = typeof value === "number" ? value : 0;
+                        return [
+                          `${vol.toLocaleString("es-VE", { minimumFractionDigits: 0 })} USDT`,
+                          name === "buyVolume" ? "Vol. Compra" : "Vol. Venta",
+                        ];
+                      }}
+                    />
+                    <Bar
+                      dataKey="buyVolume"
+                      fill="#10B981"
+                      fillOpacity={0.6}
+                      radius={[2, 2, 0, 0]}
+                      maxBarSize={8}
+                    />
+                    <Bar
+                      dataKey="sellVolume"
+                      fill="#F59E0B"
+                      fillOpacity={0.6}
+                      radius={[2, 2, 0, 0]}
+                      maxBarSize={8}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </>
           )}
         </div>
       </section>
@@ -664,6 +810,105 @@ export default function Dashboard({
         </div>
       </section>
 
+      {/* ═══ NEW TRADE PANEL ═══ */}
+      <TradePanel currentPrice={latestMarket?.price ?? null} />
+
+      {/* ═══ MEJORES HORAS ═══ */}
+      {scoredPatterns.length > 0 && (
+        <section>
+          <h2 className="mb-4 text-xl font-semibold text-white">
+            ⏰ Mejores Horas para Operar
+          </h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* Top horas para VENDER */}
+            <div className="rounded-xl border border-emerald-800/50 bg-emerald-950/10 p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <span className="text-lg">💰</span>
+                <h3 className="text-sm font-semibold text-emerald-400">
+                  Mejores horas para VENDER USDT
+                </h3>
+              </div>
+              <div className="space-y-2">
+                {[...scoredPatterns]
+                  .sort((a, b) => b.sellScore - a.sellScore)
+                  .slice(0, 3)
+                  .map((h, i) => (
+                    <div
+                      key={h.hour}
+                      className="flex items-center justify-between rounded-lg bg-gray-900/50 px-3 py-2"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-white">
+                          #{i + 1}
+                        </span>
+                        <span className="text-sm font-medium text-white">
+                          {getHourLabel(h.hour)}
+                        </span>
+                        {h.hour === currentHour && (
+                          <span className="text-xs text-emerald-400">
+                            ← ahora
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-emerald-400">
+                          {fmtNum(h.avgPrice)} VES
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Vol. Compra: {(h.avgBuyVolume / 1000).toFixed(0)}K
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+
+            {/* Top horas para COMPRAR */}
+            <div className="rounded-xl border border-amber-800/50 bg-amber-950/10 p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <span className="text-lg">🟢</span>
+                <h3 className="text-sm font-semibold text-amber-400">
+                  Mejores horas para COMPRAR USDT
+                </h3>
+              </div>
+              <div className="space-y-2">
+                {[...scoredPatterns]
+                  .sort((a, b) => b.buyScore - a.buyScore)
+                  .slice(0, 3)
+                  .map((h, i) => (
+                    <div
+                      key={h.hour}
+                      className="flex items-center justify-between rounded-lg bg-gray-900/50 px-3 py-2"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-white">
+                          #{i + 1}
+                        </span>
+                        <span className="text-sm font-medium text-white">
+                          {getHourLabel(h.hour)}
+                        </span>
+                        {h.hour === currentHour && (
+                          <span className="text-xs text-amber-400">
+                            ← ahora
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-amber-400">
+                          {fmtNum(h.avgPrice)} VES
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Vol. Venta: {(h.avgSellVolume / 1000).toFixed(0)}K
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* ═══ HOURLY PATTERNS TABLE ═══ */}
       {patterns.length > 0 && (
         <section>
@@ -681,16 +926,19 @@ export default function Dashboard({
                     Precio Prom
                   </th>
                   <th className="px-4 py-3 font-medium text-gray-400 text-right">
-                    Mínimo
+                    Vol. Compra
                   </th>
                   <th className="px-4 py-3 font-medium text-gray-400 text-right">
-                    Máximo
+                    Vol. Venta
+                  </th>
+                  <th className="px-4 py-3 font-medium text-gray-400 text-center">
+                    Perfil
                   </th>
                   <th className="px-4 py-3 font-medium text-gray-400 text-right">
-                    Vol. Prom (USDT)
+                    Mín
                   </th>
                   <th className="px-4 py-3 font-medium text-gray-400 text-right">
-                    Muestras
+                    Máx
                   </th>
                   <th className="px-4 py-3 font-medium text-gray-400 text-center">
                     Señal
@@ -704,12 +952,47 @@ export default function Dashboard({
                   const maxAvg = Math.max(...patterns.map((x) => x.avgPrice));
                   const isDip = p.avgPrice <= minAvg;
                   const isPeak = p.avgPrice >= maxAvg;
+
+                  // Find scored pattern for detail
+                  const sp = scoredPatterns.find(s => s.hour === p.hour);
+                  const maxBuyLocal = Math.max(
+                    ...patterns.map((x) => x.avgBuyVolume),
+                    1
+                  );
+                  const maxSellLocal = Math.max(
+                    ...patterns.map((x) => x.avgSellVolume),
+                    1
+                  );
+                  const buyBarPct = (p.avgBuyVolume / maxBuyLocal) * 100;
+                  const sellBarPct = (p.avgSellVolume / maxSellLocal) * 100;
+                  const dominant =
+                    p.avgBuyVolume > p.avgSellVolume
+                      ? "compra"
+                      : p.avgSellVolume > p.avgBuyVolume
+                        ? "venta"
+                        : "igual";
+                  const isBestSell = bestSellSet.has(p.hour);
+                  const isBestBuy = bestBuySet.has(p.hour);
+
+                  let rowSignal: string;
+                  if (isBestSell) {
+                    rowSignal = "💰";
+                  } else if (isBestBuy) {
+                    rowSignal = "🟢";
+                  } else if (isDip && p.count > 1) {
+                    rowSignal = "🔵";
+                  } else if (isPeak && p.count > 1) {
+                    rowSignal = "🔴";
+                  } else {
+                    rowSignal = "⚪";
+                  }
+
                   return (
                     <tr
                       key={p.hour}
                       className={`transition hover:bg-gray-900/50 ${
                         isCurrent ? "bg-emerald-950/10" : ""
-                      }`}
+                      } ${isBestSell ? "bg-emerald-950/20" : isBestBuy ? "bg-amber-950/20" : ""}`}
                     >
                       <td className="px-4 py-2.5 font-medium text-white">
                         {getHourLabel(p.hour)}
@@ -723,25 +1006,69 @@ export default function Dashboard({
                         {fmtNum(p.avgPrice)}
                       </td>
                       <td className="px-4 py-2.5 text-right font-mono tabular-nums text-emerald-400">
+                        {p.avgBuyVolume > 0
+                          ? (p.avgBuyVolume / 1000).toFixed(0) + "K"
+                          : "—"}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono tabular-nums text-amber-400">
+                        {p.avgSellVolume > 0
+                          ? (p.avgSellVolume / 1000).toFixed(0) + "K"
+                          : "—"}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-1">
+                          {/* Buy bar */}
+                          <div className="h-2 w-10 overflow-hidden rounded-full bg-gray-800">
+                            <div
+                              className="h-full rounded-full bg-emerald-500/60 transition-all"
+                              style={{ width: `${Math.min(buyBarPct, 100)}%` }}
+                            />
+                          </div>
+                          {/* Sell bar */}
+                          <div className="h-2 w-10 overflow-hidden rounded-full bg-gray-800">
+                            <div
+                              className="h-full rounded-full bg-amber-500/60 transition-all"
+                              style={{ width: `${Math.min(sellBarPct, 100)}%` }}
+                            />
+                          </div>
+                          <span
+                            className={`ml-1 text-xs font-medium ${
+                              dominant === "compra"
+                                ? "text-emerald-400"
+                                : dominant === "venta"
+                                  ? "text-amber-400"
+                                  : "text-gray-500"
+                            }`}
+                          >
+                            {dominant === "compra"
+                              ? "🚀"
+                              : dominant === "venta"
+                                ? "💰"
+                                : "⚖️"}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono tabular-nums text-emerald-400">
                         {fmtNum(p.minPrice)}
                       </td>
                       <td className="px-4 py-2.5 text-right font-mono tabular-nums text-amber-400">
                         {fmtNum(p.maxPrice)}
                       </td>
-                      <td className="px-4 py-2.5 text-right font-mono tabular-nums text-gray-400">
-                        {p.avgVolume > 0
-                          ? (p.avgVolume / 1000).toFixed(0) + "K"
-                          : "—"}
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-mono tabular-nums text-gray-500">
-                        {p.count}
-                      </td>
                       <td className="px-4 py-2.5 text-center">
-                        {isDip && p.count > 1
-                          ? "🟢"
-                          : isPeak && p.count > 1
-                            ? "🔴"
-                            : "⚪"}
+                        <span title={isBestSell ? `${(sp?.sellScore ?? 0).toFixed(1)}%` : isBestBuy ? `${(sp?.buyScore ?? 0).toFixed(1)}%` : ""}>
+                          {rowSignal}
+                        </span>
+                        <br />
+                        {isBestSell && (
+                          <span className="text-[10px] font-medium text-emerald-500">
+                            Vender
+                          </span>
+                        )}
+                        {isBestBuy && (
+                          <span className="text-[10px] font-medium text-amber-500">
+                            Comprar
+                          </span>
+                        )}
                       </td>
                     </tr>
                   );
@@ -751,8 +1078,6 @@ export default function Dashboard({
           </div>
         </section>
       )}
-
-      <TradePanel currentPrice={latestMarket?.price ?? null} />
 
       {/* ═══ RECENT RECORDS TABLE ═══ */}
       <section>
