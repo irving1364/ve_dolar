@@ -399,6 +399,93 @@ export default function Dashboard({
     }
   }, []);
 
+  // ── Edit / Delete trade state ──
+  const [editingTrade, setEditingTrade] = useState<TradeData | null>(null);
+  const [editForm, setEditForm] = useState({
+    type: "sell" as "sell" | "buy",
+    amount: "",
+    price: "",
+    targetPrice: "",
+    notes: "",
+    status: "open" as string,
+    profit: "",
+    profitPct: "",
+  });
+
+  const openEditModal = (t: TradeData) => {
+    setEditForm({
+      type: t.type as "sell" | "buy",
+      amount: t.amount.toString(),
+      price: t.price.toString(),
+      targetPrice: t.targetPrice?.toString() ?? "",
+      notes: t.notes ?? "",
+      status: t.status,
+      profit: t.profit?.toString() ?? "",
+      profitPct: t.profitPct?.toString() ?? "",
+    });
+    setEditingTrade(t);
+  };
+
+  const saveEditTrade = async () => {
+    if (!editingTrade) return;
+    const body: { [key: string]: unknown } = {
+      action: "edit",
+      type: editForm.type,
+      amount: editForm.amount,
+      price: editForm.price,
+      notes: editForm.notes || null,
+    };
+    if (editForm.targetPrice) {
+      body.targetPrice = editForm.targetPrice;
+    } else {
+      body.targetPrice = null;
+    }
+    // Allow editing closed trade fields
+    if (editingTrade.status === "closed") {
+      // If reopening, clear close-related fields
+      if (editForm.status === "open") {
+        body.status = "open";
+        body.closedAt = null;
+        body.profit = null;
+        body.profitPct = null;
+      } else {
+        body.status = editForm.status;
+        if (editForm.profit) body.profit = editForm.profit;
+        else body.profit = null;
+        if (editForm.profitPct) body.profitPct = editForm.profitPct;
+        else body.profitPct = null;
+      }
+    }
+
+    try {
+      const res = await fetch(`/api/trades/${editingTrade.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        setEditingTrade(null);
+        fetchRates(timeRange, recordsPage, tradesPage);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const deleteTrade = async (id: number) => {
+    if (!confirm("¿Eliminar este trade definitivamente?")) return;
+    try {
+      const res = await fetch(`/api/trades/${id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        fetchRates(timeRange, recordsPage, tradesPage);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
   // Pagination helpers
   const goToPage = (page: number, setter: (p: number) => void) => {
     if (page >= 1) setter(page);
@@ -1118,6 +1205,9 @@ export default function Dashboard({
                 <th className="px-4 py-3 font-medium text-gray-400">
                   Cierre
                 </th>
+                <th className="px-4 py-3 font-medium text-gray-400 text-center">
+                  Acciones
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
@@ -1209,12 +1299,30 @@ export default function Dashboard({
                         })
                       : "—"}
                   </td>
+                  <td className="px-4 py-2.5 text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      <button
+                        onClick={() => openEditModal(t)}
+                        className="rounded-md bg-gray-700 px-2 py-1 text-xs text-gray-300 transition hover:bg-gray-600 hover:text-white"
+                        title="Editar trade"
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        onClick={() => deleteTrade(t.id)}
+                        className="rounded-md bg-gray-700 px-2 py-1 text-xs text-gray-300 transition hover:bg-red-900/60 hover:text-red-300"
+                        title="Eliminar trade"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
               {trades.length === 0 && (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     className="px-4 py-8 text-center text-gray-500"
                   >
                     No hay trades registrados. Abre un trade desde la sección
@@ -1227,6 +1335,143 @@ export default function Dashboard({
         </div>
         {renderPagination(tradesPage, tradesTotalPages, setTradesPage)}
       </section>
+
+      {/* ═══ EDIT TRADE MODAL ═══ */}
+      {editingTrade && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="mx-4 w-full max-w-lg rounded-xl border border-gray-700 bg-gray-900 p-6 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-white">
+                {editingTrade.status === "open" ? "✏️ Editar Trade #" + editingTrade.id : "✏️ Editar Trade Cerrado #" + editingTrade.id}
+              </h3>
+              <button
+                onClick={() => setEditingTrade(null)}
+                className="rounded-lg p-1 text-gray-500 transition hover:bg-gray-800 hover:text-white"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs text-gray-500">Tipo</label>
+                  <select
+                    value={editForm.type}
+                    onChange={(e) => setEditForm({ ...editForm, type: e.target.value as "sell" | "buy" })}
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white"
+                  >
+                    <option value="sell">Venta</option>
+                    <option value="buy">Compra</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-gray-500">Estado</label>
+                  <select
+                    value={editForm.status}
+                    onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white"
+                  >
+                    <option value="open">🟢 Activo</option>
+                    <option value="closed">🔒 Cerrado</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs text-gray-500">Cantidad (USDT)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={editForm.amount}
+                    onChange={(e) => setEditForm({ ...editForm, amount: e.target.value })}
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-gray-500">Precio (VES)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editForm.price}
+                    onChange={(e) => setEditForm({ ...editForm, price: e.target.value })}
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs text-gray-500">Precio objetivo (VES)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editForm.targetPrice}
+                    onChange={(e) => setEditForm({ ...editForm, targetPrice: e.target.value })}
+                    placeholder="Opcional"
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-gray-500">Notas</label>
+                  <input
+                    type="text"
+                    value={editForm.notes}
+                    onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white"
+                  />
+                </div>
+              </div>
+
+              {editForm.status === "closed" && (
+                <div className="grid grid-cols-2 gap-3 rounded-lg border border-gray-800 bg-gray-950/50 p-3">
+                  <p className="col-span-2 text-xs font-medium text-gray-500">
+                    Datos de cierre (opcional)
+                  </p>
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-500">Ganancia (Bs.)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editForm.profit}
+                      onChange={(e) => setEditForm({ ...editForm, profit: e.target.value })}
+                      className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-gray-500">Rendimiento (%)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editForm.profitPct}
+                      onChange={(e) => setEditForm({ ...editForm, profitPct: e.target.value })}
+                      className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  onClick={() => setEditingTrade(null)}
+                  className="rounded-lg border border-gray-700 px-4 py-2 text-sm text-gray-400 transition hover:border-gray-600 hover:text-white"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={saveEditTrade}
+                  className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
+                >
+                  Guardar cambios
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ═══ RECENT RECORDS TABLE ═══ */}
       <section>

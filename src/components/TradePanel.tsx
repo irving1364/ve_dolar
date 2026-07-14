@@ -222,12 +222,25 @@ export default function TradePanel({ currentPrice }: TradePanelProps) {
                       })}
                     </span>
                   </div>
-                  <button
-                    onClick={() => closeTrade(t.id)}
-                    className="rounded-lg bg-gray-700 px-3 py-1 text-xs text-gray-300 transition hover:bg-gray-600"
-                  >
-                    Cerrar trade
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => closeTrade(t.id)}
+                      className="rounded-lg bg-emerald-700 px-3 py-1 text-xs text-white transition hover:bg-emerald-600"
+                    >
+                      Cerrar
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!confirm("¿Eliminar este trade definitivamente?")) return;
+                        const res = await fetch(`/api/trades/${t.id}`, { method: "DELETE" });
+                        if (res.ok) loadTrades();
+                      }}
+                      className="rounded-lg bg-gray-700 px-2.5 py-1 text-xs text-gray-400 transition hover:bg-red-900/60 hover:text-red-300"
+                      title="Eliminar trade"
+                    >
+                      🗑️
+                    </button>
+                  </div>
                 </div>
 
                 <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
