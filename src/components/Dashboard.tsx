@@ -68,6 +68,31 @@ interface DashboardProps {
   trades: TradeData[];
 }
 
+interface RatesResponse {
+  paraleloHistory: RatePoint[];
+  bcvHistory: RatePoint[];
+  recentRecords: Record[];
+  recentTotal: number;
+  recordsPage: number;
+  recordsPerPage: number;
+  totalPages: number;
+  latestMarket: MarketSnapshot | null;
+  trades: TradeData[];
+  tradesTotal: number;
+  tradesPage: number;
+  tradesPerPage: number;
+  tradesTotalPages: number;
+}
+
+type TimeRange = "today" | "3d" | "week" | "month";
+
+const TIME_RANGE_OPTIONS: { value: TimeRange; label: string }[] = [
+  { value: "today", label: "Hoy" },
+  { value: "3d", label: "3 días" },
+  { value: "week", label: "Semana" },
+  { value: "month", label: "Mes" },
+];
+
 function fmtNum(n: number, decimals = 2): string {
   return n.toLocaleString("es-VE", {
     minimumFractionDigits: decimals,
@@ -80,17 +105,66 @@ function getHourLabel(h: number): string {
 }
 
 export default function Dashboard({
-  latestMarket,
-  paraleloHistory,
-  bcvHistory,
-  recentRecords,
-  trades,
+  latestMarket: initialMarket,
+  paraleloHistory: initialParalelo,
+  bcvHistory: initialBcv,
+  recentRecords: initialRecords,
+  trades: initialTrades,
 }: DashboardProps) {
   const [advice, setAdvice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showVolume, setShowVolume] = useState(false);
   const [patterns, setPatterns] = useState<HourlyPattern[]>([]);
+
+  // Time range & pagination state
+  const [timeRange, setTimeRange] = useState<TimeRange>("week");
+  const [isFetching, setIsFetching] = useState(false);
+  const [latestMarket, setLatestMarket] = useState<MarketSnapshot | null>(initialMarket);
+  const [paraleloHistory, setParaleloHistory] = useState<RatePoint[]>(initialParalelo);
+  const [bcvHistory, setBcvHistory] = useState<RatePoint[]>(initialBcv);
+  const [recentRecords, setRecentRecords] = useState<Record[]>(initialRecords);
+  const [recordsPage, setRecordsPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [trades, setTrades] = useState<TradeData[]>(initialTrades);
+  const [tradesPage, setTradesPage] = useState(1);
+  const [tradesTotalPages, setTradesTotalPages] = useState(1);
+
+  // Fetch data based on range and pagination
+  const fetchRates = useCallback(
+    async (range: TimeRange, rPage: number, tPage: number) => {
+      setIsFetching(true);
+      try {
+        const res = await fetch(
+          `/api/rates?range=${range}&recordsPage=${rPage}&tradesPage=${tPage}`
+        );
+        const data: RatesResponse = await res.json();
+        setLatestMarket(data.latestMarket);
+        setParaleloHistory(data.paraleloHistory);
+        setBcvHistory(data.bcvHistory);
+        setRecentRecords(data.recentRecords);
+        setTotalPages(data.totalPages);
+        setTrades(data.trades);
+        setTradesTotalPages(data.tradesTotalPages);
+      } catch {
+        // Keep existing data on error
+      } finally {
+        setIsFetching(false);
+      }
+    },
+    []
+  );
+
+  // Fetch data when timeRange, recordsPage, or tradesPage changes
+  useEffect(() => {
+    fetchRates(timeRange, recordsPage, tradesPage);
+  }, [timeRange, recordsPage, tradesPage, fetchRates]);
+
+  const handleRangeChange = (range: TimeRange) => {
+    setRecordsPage(1);
+    setTradesPage(1);
+    setTimeRange(range);
+  };
 
   useEffect(() => {
     fetch("/api/patterns/hourly")
@@ -132,7 +206,8 @@ export default function Dashboard({
   const currentPattern = patterns.find((p) => p.hour === currentHour);
   const trend =
     patterns.length > 0 && currentPattern
-      ? currentPattern.avgPrice > (patterns.find((p) => p.hour === (currentHour + 23) % 24)?.avgPrice ?? 0)
+      ? currentPattern.avgPrice >
+        (patterns.find((p) => p.hour === (currentHour + 23) % 24)?.avgPrice ?? 0)
         ? "subiendo"
         : "bajando"
       : null;
@@ -196,6 +271,43 @@ export default function Dashboard({
       setLoading(false);
     }
   }, []);
+
+  // Pagination helpers
+  const goToPage = (page: number, setter: (p: number) => void) => {
+    if (page >= 1) setter(page);
+  };
+
+  const renderPagination = (
+    current: number,
+    total: number,
+    setter: (p: number) => void
+  ) => {
+    if (total <= 1) return null;
+    return (
+      <div className="flex items-center justify-center gap-2 pt-3">
+        <button
+          onClick={() => goToPage(current - 1, setter)}
+          disabled={current <= 1}
+          className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-400 transition hover:border-gray-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          ← Anterior
+        </button>
+        <span className="text-xs text-gray-500">
+          Pág. {current} de {total}
+        </span>
+        <button
+          onClick={() => goToPage(current + 1, setter)}
+          disabled={current >= total}
+          className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-400 transition hover:border-gray-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Siguiente →
+        </button>
+      </div>
+    );
+  };
+
+  // Chart height based on data volume
+  const chartHeight = paraleloHistory.length > 200 ? 400 : 300;
 
   return (
     <div className="space-y-8">
@@ -306,10 +418,36 @@ export default function Dashboard({
         </section>
       )}
 
+      {/* ═══ CHART SECTION ═══ */}
       <section>
-        <h2 className="mb-4 text-xl font-semibold text-white">
-          Evolución Tasa Paralela
-        </h2>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-xl font-semibold text-white">
+            Evolución Tasa Paralela
+          </h2>
+          {/* Time Range Selector */}
+          <div className="flex items-center gap-2">
+            {isFetching && (
+              <span className="text-xs text-gray-500 animate-pulse">
+                Cargando…
+              </span>
+            )}
+            <div className="flex rounded-lg border border-gray-700 bg-gray-800 overflow-hidden">
+              {TIME_RANGE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => handleRangeChange(opt.value)}
+                  className={`px-3 py-1.5 text-xs font-medium transition ${
+                    timeRange === opt.value
+                      ? "bg-emerald-600 text-white"
+                      : "text-gray-400 hover:text-white hover:bg-gray-700"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
         <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
           {chartData.length === 0 ? (
             <p className="py-12 text-center text-gray-500">
@@ -317,7 +455,7 @@ export default function Dashboard({
               tasas.
             </p>
           ) : (
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={chartHeight}>
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                 <XAxis
@@ -339,9 +477,9 @@ export default function Dashboard({
                     borderRadius: 8,
                     color: "#F9FAFB",
                   }}
-                  formatter={(value, name) => [
+                  formatter={(value) => [
                     `${Number(value).toFixed(2)} VES`,
-                    name === "price" ? "Paralelo" : name,
+                    "Paralelo",
                   ]}
                 />
                 {bcvLatest && (
@@ -372,6 +510,7 @@ export default function Dashboard({
         </div>
       </section>
 
+      {/* ═══ ADVICE SECTION ═══ */}
       <section>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold text-white">
@@ -403,6 +542,7 @@ export default function Dashboard({
         )}
       </section>
 
+      {/* ═══ HOURLY PATTERNS TABLE ═══ */}
       {patterns.length > 0 && (
         <section>
           <h2 className="mb-4 text-xl font-semibold text-white">
@@ -438,8 +578,10 @@ export default function Dashboard({
               <tbody className="divide-y divide-gray-800">
                 {patterns.map((p) => {
                   const isCurrent = p.hour === currentHour;
-                  const isDip = p.avgPrice <= (patterns.reduce((min, x) => Math.min(min, x.avgPrice), Infinity));
-                  const isPeak = p.avgPrice >= (patterns.reduce((max, x) => Math.max(max, x.avgPrice), -Infinity));
+                  const minAvg = Math.min(...patterns.map((x) => x.avgPrice));
+                  const maxAvg = Math.max(...patterns.map((x) => x.avgPrice));
+                  const isDip = p.avgPrice <= minAvg;
+                  const isPeak = p.avgPrice >= maxAvg;
                   return (
                     <tr
                       key={p.hour}
@@ -490,17 +632,25 @@ export default function Dashboard({
 
       <TradePanel currentPrice={latestMarket?.price ?? null} />
 
+      {/* ═══ RECENT RECORDS TABLE ═══ */}
       <section>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold text-white">
             Últimos Registros
           </h2>
-          <button
-            onClick={() => setShowVolume(!showVolume)}
-            className="rounded-lg border border-gray-700 px-4 py-1.5 text-xs font-medium text-gray-400 transition hover:border-gray-600 hover:text-white"
-          >
-            {showVolume ? "Ocultar volumen" : "Ver volumen"}
-          </button>
+          <div className="flex items-center gap-2">
+            {isFetching && (
+              <span className="text-xs text-gray-500 animate-pulse">
+                Cargando…
+              </span>
+            )}
+            <button
+              onClick={() => setShowVolume(!showVolume)}
+              className="rounded-lg border border-gray-700 px-4 py-1.5 text-xs font-medium text-gray-400 transition hover:border-gray-600 hover:text-white"
+            >
+              {showVolume ? "Ocultar volumen" : "Ver volumen"}
+            </button>
+          </div>
         </div>
         <div className="overflow-x-auto rounded-xl border border-gray-800">
           <table className="w-full text-left text-sm">
@@ -589,6 +739,7 @@ export default function Dashboard({
             </tbody>
           </table>
         </div>
+        {renderPagination(recordsPage, totalPages, setRecordsPage)}
       </section>
     </div>
   );
