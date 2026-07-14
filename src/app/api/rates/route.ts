@@ -104,14 +104,11 @@ export async function GET(request: NextRequest) {
       select: { price: true },
     }),
     prisma.trade.findMany({
-      where: { status: "open" },
       orderBy: { createdAt: "desc" },
       skip: (tradesPage - 1) * tradesPerPage,
       take: tradesPerPage,
     }),
-    prisma.trade.count({
-      where: { status: "open" },
-    }),
+    prisma.trade.count(),
   ]);
 
   function fmt(d: Date): string {

@@ -1079,6 +1079,155 @@ export default function Dashboard({
         </section>
       )}
 
+      {/* ═══ HISTORIAL DE TRADES ═══ */}
+      <section>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-xl font-semibold text-white">
+            📋 Historial de Trades
+          </h2>
+          <div className="flex items-center gap-2">
+            {isFetching && (
+              <span className="animate-pulse text-xs text-gray-500">
+                Cargando…
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="overflow-x-auto rounded-xl border border-gray-800">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-gray-800 bg-gray-900">
+              <tr>
+                <th className="px-4 py-3 font-medium text-gray-400">#</th>
+                <th className="px-4 py-3 font-medium text-gray-400">Tipo</th>
+                <th className="px-4 py-3 font-medium text-gray-400">Estado</th>
+                <th className="px-4 py-3 font-medium text-gray-400 text-right">
+                  Cantidad (USDT)
+                </th>
+                <th className="px-4 py-3 font-medium text-gray-400 text-right">
+                  Precio (VES)
+                </th>
+                <th className="px-4 py-3 font-medium text-gray-400 text-right">
+                  Ganancia
+                </th>
+                <th className="px-4 py-3 font-medium text-gray-400 text-right">
+                  Rendimiento
+                </th>
+                <th className="px-4 py-3 font-medium text-gray-400">
+                  Apertura
+                </th>
+                <th className="px-4 py-3 font-medium text-gray-400">
+                  Cierre
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-800">
+              {trades.map((t) => (
+                <tr
+                  key={t.id}
+                  className={`transition hover:bg-gray-900/50 ${
+                    t.status === "open" ? "bg-emerald-950/5" : ""
+                  }`}
+                >
+                  <td className="px-4 py-2.5 font-mono text-xs text-gray-500">
+                    {t.id}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <span
+                      className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                        t.type === "sell"
+                          ? "bg-amber-950 text-amber-400"
+                          : "bg-emerald-950 text-emerald-400"
+                      }`}
+                    >
+                      {t.type === "sell" ? "VENTA" : "COMPRA"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                        t.status === "open"
+                          ? "bg-emerald-950/50 text-emerald-400"
+                          : "bg-gray-800 text-gray-400"
+                      }`}
+                    >
+                      {t.status === "open"
+                        ? "🟢 Activo"
+                        : "🔒 Cerrado"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-mono tabular-nums text-white">
+                    {fmtNum(t.amount, 0)}
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-mono tabular-nums text-white">
+                    {fmtNum(t.price)}
+                  </td>
+                  <td
+                    className={`px-4 py-2.5 text-right font-mono tabular-nums ${
+                      t.profit !== null && t.profit > 0
+                        ? "text-emerald-400"
+                        : t.profit !== null && t.profit < 0
+                          ? "text-red-400"
+                          : t.status === "open"
+                            ? "text-gray-500"
+                            : "text-gray-500"
+                    }`}
+                  >
+                    {t.profit !== null
+                      ? `${t.profit >= 0 ? "+" : ""}${fmtNum(t.profit)} Bs.`
+                      : "—"}
+                  </td>
+                  <td
+                    className={`px-4 py-2.5 text-right font-mono tabular-nums ${
+                      t.profitPct !== null && t.profitPct > 0
+                        ? "text-emerald-400"
+                        : t.profitPct !== null && t.profitPct < 0
+                          ? "text-red-400"
+                          : "text-gray-500"
+                    }`}
+                  >
+                    {t.profitPct !== null
+                      ? `${t.profitPct >= 0 ? "+" : ""}${t.profitPct.toFixed(2)}%`
+                      : "—"}
+                  </td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-gray-400">
+                    {new Date(t.createdAt).toLocaleString("es-VE", {
+                      timeZone: "America/Caracas",
+                      day: "2-digit",
+                      month: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-gray-400">
+                    {t.closedAt
+                      ? new Date(t.closedAt).toLocaleString("es-VE", {
+                          timeZone: "America/Caracas",
+                          day: "2-digit",
+                          month: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "—"}
+                  </td>
+                </tr>
+              ))}
+              {trades.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={9}
+                    className="px-4 py-8 text-center text-gray-500"
+                  >
+                    No hay trades registrados. Abre un trade desde la sección
+                    "Trade Tracker" para empezar.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        {renderPagination(tradesPage, tradesTotalPages, setTradesPage)}
+      </section>
+
       {/* ═══ RECENT RECORDS TABLE ═══ */}
       <section>
         <div className="mb-4 flex items-center justify-between">

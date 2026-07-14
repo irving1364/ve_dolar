@@ -43,14 +43,29 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const { searchParams } = new URL(req.url);
-    const status = searchParams.get("status") ?? "open";
+    const status = searchParams.get("status"); // "open" | "closed" | null (all)
+    const page = Math.max(1, parseInt(searchParams.get("page") ?? "1"));
+    const perPage = Math.min(50, Math.max(1, parseInt(searchParams.get("perPage") ?? "15")));
 
-    const trades = await prisma.trade.findMany({
-      where: { status },
-      orderBy: { createdAt: "desc" },
+    const where = status && status !== "all" ? { status } : {};
+
+    const [trades, total] = await Promise.all([
+      prisma.trade.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * perPage,
+        take: perPage,
+      }),
+      prisma.trade.count({ where }),
+    ]);
+
+    return NextResponse.json({
+      trades,
+      total,
+      page,
+      perPage,
+      totalPages: Math.ceil(total / perPage),
     });
-
-    return NextResponse.json({ trades });
   } catch (err) {
     console.error("Error listando trades:", err);
     return NextResponse.json(
