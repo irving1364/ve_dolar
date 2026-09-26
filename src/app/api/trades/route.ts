@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+
     const body = await req.json();
     const { type, amount, price, targetPrice, notes } = body;
 
@@ -27,6 +33,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         price: parseFloat(price),
         targetPrice: targetPrice ? parseFloat(targetPrice) : null,
         notes: notes ?? null,
+        userId: session.user.id,
       },
     });
 
@@ -42,12 +49,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    const { searchParams } = new URL(req.url);
-    const status = searchParams.get("status"); // "open" | "closed" | null (all)
-    const page = Math.max(1, parseInt(searchParams.get("page") ?? "1"));
-    const perPage = Math.min(50, Math.max(1, parseInt(searchParams.get("perPage") ?? "15")));
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
 
-    const where = status && status !== "all" ? { status } : {};
+    const { searchParams } = new URL(req.url);
+    const status = searchParams.get("status");
+    const page = Math.max(1, parseInt(searchParams.get("page") ?? "1"));
+    const perPage = Math.min(
+      50,
+      Math.max(1, parseInt(searchParams.get("perPage") ?? "15"))
+    );
+    const userId = session.user.id;
+
+    const where = {
+      userId,
+      ...(status && status !== "all" ? { status } : {}),
+    };
 
     const [trades, total] = await Promise.all([
       prisma.trade.findMany({

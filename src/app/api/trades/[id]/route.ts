@@ -1,29 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { computeCloseProfit } from "@/lib/trades";
 
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+
     const { id } = await params;
     const body = await req.json();
     const { action } = body;
 
-    if (action === "close") {
-      const trade = await prisma.trade.findUnique({
-        where: { id: parseInt(id) },
-      });
+    // Verify ownership
+    const existing = await prisma.trade.findFirst({
+      where: { id: parseInt(id), userId: session.user.id },
+    });
 
-      if (!trade || trade.status !== "open") {
+    if (!existing) {
+      return NextResponse.json(
+        { error: "Trade no encontrado" },
+        { status: 404 }
+      );
+    }
+
+    if (action === "close") {
+      if (existing.status !== "open") {
         return NextResponse.json(
-          { error: "Trade no encontrado o ya cerrado" },
-          { status: 404 }
+          { error: "Trade ya cerrado" },
+          { status: 400 }
         );
       }
 
       const latestRate = await prisma.rate.findFirst({
-        where: { source: "paralelo" },
+        where: { source: "paralelo", exchange: "binance" },
         orderBy: { fetchedAt: "desc" },
         select: { price: true },
       });
@@ -32,16 +47,19 @@ export async function PUT(
       let profit: number | null = null;
       let profitPct: number | null = null;
 
-      if (trade.type === "sell" && currentPrice > 0) {
-        profit = (trade.price - currentPrice) * trade.amount;
-        profitPct = ((trade.price - currentPrice) / trade.price) * 100;
-      } else if (trade.type === "buy" && currentPrice > 0) {
-        profit = (currentPrice - trade.price) * trade.amount;
-        profitPct = ((currentPrice - trade.price) / trade.price) * 100;
+      if (currentPrice > 0 && existing.amount > 0) {
+        const result = computeCloseProfit(
+          existing.type as "sell" | "buy",
+          existing.price,
+          currentPrice,
+          existing.amount
+        );
+        profit = result?.profit ?? null;
+        profitPct = result?.profitPct ?? null;
       }
 
       const closed = await prisma.trade.update({
-        where: { id: trade.id },
+        where: { id: existing.id },
         data: {
           status: "closed",
           closedAt: new Date(),
@@ -55,31 +73,45 @@ export async function PUT(
     }
 
     if (action === "edit") {
-      const trade = await prisma.trade.findUnique({
-        where: { id: parseInt(id) },
-      });
+      const {
+        type,
+        amount,
+        price,
+        targetPrice,
+        notes,
+        status,
+        profit,
+        profitPct,
+        closedAt,
+      } = body;
 
-      if (!trade) {
+      if (status !== undefined && !["open", "closed"].includes(status)) {
         return NextResponse.json(
-          { error: "Trade no encontrado" },
-          { status: 404 }
+          { error: "status debe ser 'open' o 'closed'" },
+          { status: 400 }
         );
       }
 
-      const { type, amount, price, targetPrice, notes, status, profit, profitPct, closedAt } = body;
-
       const updated = await prisma.trade.update({
-        where: { id: trade.id },
+        where: { id: existing.id },
         data: {
           ...(type !== undefined && { type }),
           ...(amount !== undefined && { amount: parseFloat(amount) }),
           ...(price !== undefined && { price: parseFloat(price) }),
-          ...(targetPrice !== undefined && { targetPrice: targetPrice !== null ? parseFloat(targetPrice) : null }),
+          ...(targetPrice !== undefined && {
+            targetPrice: targetPrice !== null ? parseFloat(targetPrice) : null,
+          }),
           ...(notes !== undefined && { notes }),
           ...(status !== undefined && { status }),
-          ...(profit !== undefined && { profit: profit !== null ? parseFloat(profit) : null }),
-          ...(profitPct !== undefined && { profitPct: profitPct !== null ? parseFloat(profitPct) : null }),
-          ...(closedAt !== undefined && { closedAt: closedAt ? new Date(closedAt) : null }),
+          ...(profit !== undefined && {
+            profit: profit !== null ? parseFloat(profit) : null,
+          }),
+          ...(profitPct !== undefined && {
+            profitPct: profitPct !== null ? parseFloat(profitPct) : null,
+          }),
+          ...(closedAt !== undefined && {
+            closedAt: closedAt ? new Date(closedAt) : null,
+          }),
         },
       });
 
@@ -104,10 +136,15 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+
     const { id } = await params;
 
-    const trade = await prisma.trade.findUnique({
-      where: { id: parseInt(id) },
+    const trade = await prisma.trade.findFirst({
+      where: { id: parseInt(id), userId: session.user.id },
     });
 
     if (!trade) {

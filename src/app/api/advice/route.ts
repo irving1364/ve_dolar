@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/auth";
 import OpenAI from "openai";
 import { prisma } from "@/lib/prisma";
+import { isRateLimited } from "@/lib/rate-limit";
+
+const ADVICE_RATE_LIMIT_MS = 10_000;
 
 async function getMarketContext() {
   const [records, latest, bcvLatest] = await Promise.all([
     prisma.rate.findMany({
-      where: { source: "paralelo" },
+      where: { source: "paralelo", exchange: "binance" },
       orderBy: { fetchedAt: "desc" },
       take: 96,
       select: { price: true, fetchedAt: true },
     }),
     prisma.rate.findFirst({
-      where: { source: "paralelo" },
+      where: { source: "paralelo", exchange: "binance" },
       orderBy: { fetchedAt: "desc" },
       select: {
         price: true,
@@ -245,6 +249,14 @@ Máximo 280 palabras en total. Responde en español.`;
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: "Debes iniciar sesión para usar la asesoría IA" },
+        { status: 401 }
+      );
+    }
+
     if (!process.env.GROQ_API_KEY) {
       return NextResponse.json(
         { error: "GROQ_API_KEY no configurada" },
@@ -252,8 +264,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
+    if (isRateLimited(`advice:${session.user.id}`, ADVICE_RATE_LIMIT_MS)) {
+      return NextResponse.json(
+        { error: "Espera unos segundos antes de pedir otra recomendación" },
+        { status: 429 }
+      );
+    }
+
     const body = await req.json().catch(() => ({}));
-    const type = body.type ?? "sell"; // "sell" | "buy" | "analyze"
+    const type = body.type ?? "sell";
 
     if (!["sell", "buy", "analyze"].includes(type)) {
       return NextResponse.json(
@@ -284,7 +303,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       prompt = buildBuyPrompt(ctx);
     } else {
       const openTrades = await prisma.trade.findMany({
-        where: { status: "open" },
+        where: { status: "open", userId: session.user.id },
         orderBy: { createdAt: "desc" },
       });
       prompt = buildAnalyzePrompt(ctx, openTrades);

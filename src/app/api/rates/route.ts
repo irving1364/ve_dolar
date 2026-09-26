@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
+import { getEnabledExchanges } from "@/lib/exchanges";
+import { auth } from "@/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +40,9 @@ function getTakeForRange(range: string): number {
 }
 
 export async function GET(request: NextRequest) {
+  const session = await auth();
+  const userId = session?.user?.id ?? null;
+
   const { searchParams } = new URL(request.url);
   const range = searchParams.get("range") ?? "week";
   const recordsPage = parseInt(searchParams.get("recordsPage") ?? "1");
@@ -46,6 +51,7 @@ export async function GET(request: NextRequest) {
   const tradesPerPage = 10;
   const since = getRangeDate(range);
   const take = getTakeForRange(range);
+  const exchanges = getEnabledExchanges();
 
   const [
     paraleloRecords,
@@ -58,7 +64,7 @@ export async function GET(request: NextRequest) {
     tradesTotal,
   ] = await Promise.all([
     prisma.rate.findMany({
-      where: { source: "paralelo", fetchedAt: { gte: since } },
+      where: { source: "paralelo", exchange: "binance", fetchedAt: { gte: since } },
       orderBy: { fetchedAt: "desc" },
       take,
       select: { price: true, buyVolume: true, sellVolume: true, fetchedAt: true },
@@ -76,6 +82,7 @@ export async function GET(request: NextRequest) {
       take: recordsPerPage,
       select: {
         source: true,
+        exchange: true,
         price: true,
         buyPrice: true,
         sellPrice: true,
@@ -88,7 +95,7 @@ export async function GET(request: NextRequest) {
       where: { fetchedAt: { gte: since } },
     }),
     prisma.rate.findFirst({
-      where: { source: "paralelo" },
+      where: { source: "paralelo", exchange: "binance" },
       orderBy: { fetchedAt: "desc" },
       select: {
         price: true,
@@ -103,13 +110,43 @@ export async function GET(request: NextRequest) {
       orderBy: { fetchedAt: "desc" },
       select: { price: true },
     }),
-    prisma.trade.findMany({
-      orderBy: { createdAt: "desc" },
-      skip: (tradesPage - 1) * tradesPerPage,
-      take: tradesPerPage,
-    }),
-    prisma.trade.count(),
+    userId
+      ? prisma.trade.findMany({
+          where: { userId },
+          orderBy: { createdAt: "desc" },
+          skip: (tradesPage - 1) * tradesPerPage,
+          take: tradesPerPage,
+        })
+      : Promise.resolve([]),
+    userId ? prisma.trade.count({ where: { userId } }) : Promise.resolve(0),
   ]);
+
+  const exchangeHistoryArrays = await Promise.all(
+    exchanges.map((exchange) =>
+      prisma.rate.findMany({
+        where: { source: "paralelo", exchange, fetchedAt: { gte: since } },
+        orderBy: { fetchedAt: "desc" },
+        take,
+        select: { price: true, buyPrice: true, sellPrice: true, fetchedAt: true },
+      })
+    )
+  );
+
+  const latestExchangeArrays = await Promise.all(
+    exchanges.map((exchange) =>
+      prisma.rate.findFirst({
+        where: { source: "paralelo", exchange },
+        orderBy: { fetchedAt: "desc" },
+        select: {
+          price: true,
+          buyPrice: true,
+          sellPrice: true,
+          buyVolume: true,
+          sellVolume: true,
+        },
+      })
+    )
+  );
 
   function fmt(d: Date): string {
     const f = new Intl.DateTimeFormat("es-VE", {
@@ -123,19 +160,45 @@ export async function GET(request: NextRequest) {
     return f.format(d);
   }
 
+  const exchangeHistory: Record<string, { price: number; time: string; ts: number }[]> = {};
+  exchanges.forEach((exchange, i) => {
+    exchangeHistory[exchange] = exchangeHistoryArrays[i].map((r) => ({
+      price: r.price,
+      time: fmt(r.fetchedAt),
+      ts: r.fetchedAt.getTime(),
+    }));
+  });
+
+  const latestExchanges = exchanges.map((exchange, i) => {
+    const r = latestExchangeArrays[i];
+    if (!r) return null;
+    return {
+      exchange,
+      price: r.price,
+      buyPrice: r.buyPrice ?? null,
+      sellPrice: r.sellPrice ?? null,
+      buyVolume: r.buyVolume ?? null,
+      sellVolume: r.sellVolume ?? null,
+    };
+  });
+
   return NextResponse.json({
     paraleloHistory: paraleloRecords.map((r) => ({
       price: r.price,
       buyVolume: r.buyVolume ?? undefined,
       sellVolume: r.sellVolume ?? undefined,
       time: fmt(r.fetchedAt),
+      ts: r.fetchedAt.getTime(),
     })),
     bcvHistory: bcvRecords.map((r) => ({
       price: r.price,
       time: fmt(r.fetchedAt),
     })),
+    exchangeHistory,
+    latestExchanges,
     recentRecords: recentRecords.map((r) => ({
       source: r.source,
+      exchange: r.exchange ?? undefined,
       price: r.price,
       buyPrice: r.buyPrice ?? undefined,
       sellPrice: r.sellPrice ?? undefined,

@@ -2,6 +2,90 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Light mode (default) — editorial, hairline, minimalist ── */
+:root {
+  color-scheme: light;
+  --brand-cream: 247 245 241;   /* #f7f5f1 warm paper */
+  --brand-yellow: 154 42 42;    /* #9a2a2a oxblood accent */
+  --brand-green: 22 22 22;      /* #161616 ink */
+
+  /* Chart colors */
+  --chart-green: #161616;
+  --chart-yellow: #9a2a2a;
+  --chart-blue: #7c93a8;
+  --chart-tooltip-bg: #FFFFFF;
+  --chart-tooltip-border: #D9D4CB;
+  --chart-grid: #E4DFD6;
+  --chart-axis: #8A8580;
+  --chart-shadow: 0 2px 8px rgba(22, 22, 22, 0.08);
+}
+
+/* ── Dark mode ── */
+html.dark {
+  color-scheme: dark;
+  --brand-cream: 20 20 20;      /* #141414 near-black */
+  --brand-yellow: 217 115 107;  /* #d9736b brick red, lightened for contrast */
+  --brand-green: 242 240 236;   /* #f2f0ec off-white ink */
+
+  /* Chart colors */
+  --chart-green: #f2f0ec;
+  --chart-yellow: #d9736b;
+  --chart-blue: #93afc6;
+  --chart-tooltip-bg: #1D1D1D;
+  --chart-tooltip-border: #2E2E2E;
+  --chart-grid: rgba(242, 240, 236, 0.08);
+  --chart-axis: rgba(230, 225, 215, 0.4);
+  --chart-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 body {
-  @apply bg-gray-950 text-gray-100 antialiased;
+  background-color: rgb(var(--brand-cream));
+  color: rgb(var(--brand-green));
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-serif), Georgia, serif;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+::selection {
+  background-color: rgb(var(--brand-yellow));
+  color: rgb(var(--brand-cream));
+}
+
+/* ── Dark mode component overrides (functional overlays only: dropdowns, modal, sidebar) ── */
+html.dark .bg-white\/95 {
+  background-color: rgba(26, 26, 26, 0.95) !important;
+}
+html.dark .bg-white {
+  background-color: #1A1A1A !important;
+}
+
+html.dark .recharts-default-tooltip {
+  background: var(--chart-tooltip-bg) !important;
+  border-color: var(--chart-tooltip-border) !important;
+}
+html.dark .recharts-tooltip-wrapper {
+  box-shadow: var(--chart-shadow) !important;
+}
+
+/* Recharts dark mode overrides */
+html.dark .recharts-cartesian-grid-horizontal line,
+html.dark .recharts-cartesian-grid-vertical line {
+  stroke: rgba(242, 240, 236, 0.08) !important;
+}
+
+html.dark .recharts-text {
+  fill: rgba(230, 225, 215, 0.4) !important;
 }

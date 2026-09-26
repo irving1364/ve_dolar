@@ -10,4 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Llamar endpoint de recoleccion
-        run: curl -sS --max-time 30 "${{ secrets.CRON_API_URL }}/api/cron"
+        run: |
+          curl -sS --max-time 30 -f \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.CRON_API_URL }}/api/cron"

@@ -10,6 +10,7 @@ export async function GET(): Promise<NextResponse> {
     const records = await prisma.rate.findMany({
       where: {
         source: "paralelo",
+        exchange: "binance",
         fetchedAt: { gte: thirtyDaysAgo },
       },
       select: { price: true, buyVolume: true, sellVolume: true, fetchedAt: true },
