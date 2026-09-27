@@ -218,10 +218,21 @@ async function sendDailySummaryToUser(
   await sendTelegram(chatId, msg);
 }
 
+// TEMPORAL: en true mientras se depura por que FastCron no llega autorizado.
+// Poner en false (o borrar esta constante y el "&&" de abajo) para volver a
+// exigir el header Authorization correcto.
+const CRON_AUTH_DISABLED = true;
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const cronSecret = process.env.CRON_SECRET;
   const authHeader = request.headers.get("authorization");
-  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+  const authorized = !cronSecret ? false : authHeader === `Bearer ${cronSecret}`;
+
+  if (!authorized) {
+    console.warn("cron: llamada sin autorizacion valida", { hasHeader: !!authHeader });
+  }
+
+  if (!CRON_AUTH_DISABLED && !authorized) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
