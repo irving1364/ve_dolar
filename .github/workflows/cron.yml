@@ -1,8 +1,8 @@
 name: Recolectar tasas cada 30 min
 
+# Cron desactivado: se usa FastCron como scheduler unico para /api/cron.
+# Se deja workflow_dispatch para poder disparar una corrida manual si hace falta.
 on:
-  schedule:
-    - cron: "*/30 * * * *"
   workflow_dispatch:
 
 jobs:
