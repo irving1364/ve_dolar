@@ -55,12 +55,14 @@ model VerificationToken {
 }
 
 model UserSettings {
-  id             Int      @id @default(autoincrement())
-  userId         String   @unique
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  telegramChatId String?
-  notifications  Boolean  @default(true)
-  updatedAt      DateTime @updatedAt
+  id                Int       @id @default(autoincrement())
+  userId            String    @unique
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  telegramChatId    String?
+  notifications     Boolean   @default(true)
+  linkCode          String?   @unique
+  linkCodeExpiresAt DateTime?
+  updatedAt         DateTime  @updatedAt
 }
 
 model Rate {
