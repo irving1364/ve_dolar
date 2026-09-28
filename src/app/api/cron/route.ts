@@ -11,6 +11,7 @@ import {
   buildTargetReachedMessage,
   buildSellSignalMessage,
   buildBuySignalMessage,
+  buildStableStatusMessage,
   buildBestHoursSection,
   buildExchangeComparisonSection,
   buildDailySummaryMessage,
@@ -108,10 +109,22 @@ async function evaluateSignalForUser(
   if (!stats) return;
 
   const level = evaluateSignal(stats);
-  if (!level) return;
-
   const now = new Date();
   const bestHoursSection = buildBestHoursSection(bestHours);
+
+  if (!level) {
+    const settings = await prisma.userSettings.findUnique({ where: { userId } });
+    const lastNotified = settings?.lastStableNotifiedAt;
+    const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+    if (lastNotified && lastNotified > hourAgo) return;
+
+    await sendTelegram(chatId, buildStableStatusMessage(stats, now, bestHoursSection));
+    await prisma.userSettings.update({
+      where: { userId },
+      data: { lastStableNotifiedAt: now },
+    });
+    return;
+  }
 
   let msg: string;
   if (level === "strong_sell" || level === "sell") {

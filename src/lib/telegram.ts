@@ -144,6 +144,31 @@ export interface MarketStats {
   isLiquid: boolean;
 }
 
+export function buildStableStatusMessage(
+  stats: MarketStats,
+  now: Date,
+  bestHoursSection: string
+): string {
+  const fmt = new Intl.DateTimeFormat("es-VE", {
+    timeZone: "America/Caracas",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  return (
+    `<b>⚖️ Mercado estable</b>\n\n` +
+    `💰 Precio actual: <b>${stats.currentPrice.toFixed(2)} VES</b>\n` +
+    `📊 Precio promedio (48h): <b>${stats.avgPrice.toFixed(2)} VES</b>\n` +
+    `📈 Diferencia vs promedio: <b>${stats.pctAboveAvg >= 0 ? "+" : ""}${stats.pctAboveAvg.toFixed(2)}%</b>\n\n` +
+    `Sin señal clara de compra o venta por ahora. Este es un aviso de estado (máximo uno por hora) para confirmar que el monitoreo sigue activo.\n\n` +
+    `⏰ ${fmt.format(now)} VET` +
+    bestHoursSection
+  );
+}
+
 export function buildSellSignalMessage(
   stats: MarketStats,
   level: "strong" | "soft",

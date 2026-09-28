@@ -62,6 +62,7 @@ model UserSettings {
   notifications     Boolean   @default(true)
   linkCode          String?   @unique
   linkCodeExpiresAt DateTime?
+  lastStableNotifiedAt DateTime?
   updatedAt         DateTime  @updatedAt
 }
 
