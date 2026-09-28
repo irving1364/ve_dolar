@@ -113,7 +113,7 @@ interface RatesResponse {
   tradesTotalPages: number;
 }
 
-type ViewType = "market" | "trades" | "ia" | "patterns" | "settings";
+type ViewType = "market" | "trades" | "ia" | "patterns" | "intervencion" | "settings";
 type TimeRange = "today" | "3d" | "week" | "month";
 type AdviceType = "sell" | "buy" | "analyze";
 
@@ -137,8 +137,12 @@ const NAV_ITEMS: { id: ViewType; label: string; icon: string }[] = [
   { id: "trades", label: "Trades", icon: "💰" },
   { id: "ia", label: "IA", icon: "🤖" },
   { id: "patterns", label: "Patrones", icon: "⏰" },
+  { id: "intervencion", label: "Intervención", icon: "🧮" },
   { id: "settings", label: "Ajustes", icon: "⚙️" },
 ];
+
+const INTERVENCION_AMOUNTS = [100, 200, 300, 400, 500];
+const INTERVENCION_MARKUP = 0.005;
 
 function fmtNum(n: number, decimals = 2): string {
   return n.toLocaleString("es-VE", {
@@ -775,6 +779,57 @@ function PatternsView({
   );
 }
 
+// ── Intervención View ──
+function IntervencionView({ bcvPrice }: { bcvPrice: number | null }) {
+  if (!bcvPrice) {
+    return (
+      <div className="rounded-none border border-brand-green/10 p-8 text-center text-brand-green/40">
+        No hay tasa BCV disponible todavía. Espera a que el cron job recolecte tasas.
+      </div>
+    );
+  }
+
+  const appliedRate = bcvPrice * (1 + INTERVENCION_MARKUP);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex divide-x divide-brand-green/10 border-y border-brand-green/10">
+        <div className="flex-1 px-4 py-5 sm:px-6">
+          <p className="text-xs uppercase tracking-wider text-brand-green/40">Tasa BCV</p>
+          <p className="mt-1 font-mono text-2xl font-medium text-brand-green">{fmtNum(bcvPrice, 4)}</p>
+        </div>
+        <div className="flex-1 px-4 py-5 sm:px-6">
+          <p className="text-xs uppercase tracking-wider text-brand-green/40">
+            Tasa aplicada (+{(INTERVENCION_MARKUP * 100).toFixed(1)}%)
+          </p>
+          <p className="mt-1 font-mono text-2xl font-medium text-brand-yellow">{fmtNum(appliedRate, 4)}</p>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto border border-brand-green/10">
+        <table className="w-full text-left text-sm">
+          <thead>
+            <tr className="border-b border-brand-green/10 text-xs uppercase tracking-wider text-brand-green/40">
+              <th className="px-5 py-3 font-medium">Monto</th>
+              <th className="px-5 py-3 text-right font-medium">Total a pagar</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-brand-green/8">
+            {INTERVENCION_AMOUNTS.map((amount) => (
+              <tr key={amount}>
+                <td className="px-5 py-4 font-mono text-brand-green">{fmtNum(amount, 2)} $</td>
+                <td className="px-5 py-4 text-right font-mono text-lg font-semibold text-brand-green">
+                  {fmtNum(amount * appliedRate, 2)} Bs
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Dashboard Layout ──
 export default function DashboardLayout({
   latestMarket: initialMarket,
@@ -1075,6 +1130,7 @@ export default function DashboardLayout({
                 {activeView === "trades" && "Gestiona tus operaciones de compra y venta"}
                 {activeView === "ia" && "Asesoría inteligente para decisiones de trading"}
                 {activeView === "patterns" && "Patrones horarios y mejores momentos para operar"}
+                {activeView === "intervencion" && "Cálculo de intervención digital sobre la tasa BCV"}
               </p>
             </div>
           </div>
@@ -1229,6 +1285,10 @@ export default function DashboardLayout({
 
             {activeView === "patterns" && (
               <PatternsView patterns={patterns} currentHour={currentHour} />
+            )}
+
+            {activeView === "intervencion" && (
+              <IntervencionView bcvPrice={latestMarket?.bcvPrice ?? null} />
             )}
 
             {activeView === "settings" && (
