@@ -19,6 +19,7 @@ import {
 } from "@/lib/telegram";
 import { computeBestHours } from "@/lib/analysis";
 import { fetchTodayAperturas } from "@/lib/aperturas";
+import { fetchTodayVemiAperturas } from "@/lib/vemi";
 import { fetchIntervencionRate } from "@/lib/hdavzla";
 import {
   computeMarketStats,
@@ -340,9 +341,22 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
   }
 
-  // Step 2.5: Aperturas de bancos (hdavzla.com) — best-effort, no bloquea el cron.
+  // Step 2.5: Aperturas de bancos — best-effort, no bloquea el cron.
+  // hdavzla.com bloquea las IPs de datacenter de Vercel (403), asi que se
+  // intenta primero (por si algun dia deja de bloquear) y si falla se cae
+  // al canal de Telegram @vemioficial (texto libre, heuristico, menos
+  // preciso pero accesible desde Vercel).
   try {
-    const todayAperturas = await fetchTodayAperturas();
+    let todayAperturas: Awaited<ReturnType<typeof fetchTodayAperturas>> = [];
+    let sourceUsed = "hdavzla";
+    try {
+      todayAperturas = await fetchTodayAperturas();
+    } catch (hdavzlaErr) {
+      console.warn("hdavzla aperturas fetch failed, falling back to vemi:", hdavzlaErr);
+      sourceUsed = "vemi";
+      todayAperturas = await fetchTodayVemiAperturas();
+    }
+
     for (const entry of todayAperturas) {
       await prisma.bankOpening.upsert({
         where: {
@@ -363,7 +377,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         update: { duration: entry.duration },
       });
     }
-    results.push({ source: "aperturas", status: "ok", detail: `${todayAperturas.length} entradas` });
+    results.push({
+      source: "aperturas",
+      status: "ok",
+      detail: `${todayAperturas.length} entradas (${sourceUsed})`,
+    });
   } catch (err) {
     console.warn("Failed to fetch/save aperturas:", err);
     results.push({
