@@ -47,6 +47,7 @@ interface MarketSnapshot {
   buyVolume: number | null;
   sellVolume: number | null;
   bcvPrice: number | null;
+  intervencionPrice: number | null;
 }
 
 interface ExchangeSnapshot {
@@ -780,7 +781,13 @@ function PatternsView({
 }
 
 // ── Intervención View ──
-function IntervencionView({ bcvPrice }: { bcvPrice: number | null }) {
+function IntervencionView({
+  bcvPrice,
+  intervencionPrice,
+}: {
+  bcvPrice: number | null;
+  intervencionPrice: number | null;
+}) {
   if (!bcvPrice) {
     return (
       <div className="rounded-none border border-brand-green/10 p-8 text-center text-brand-green/40">
@@ -789,7 +796,8 @@ function IntervencionView({ bcvPrice }: { bcvPrice: number | null }) {
     );
   }
 
-  const appliedRate = bcvPrice * (1 + INTERVENCION_MARKUP);
+  const usingRealRate = !!intervencionPrice;
+  const appliedRate = intervencionPrice ?? bcvPrice * (1 + INTERVENCION_MARKUP);
 
   return (
     <div className="space-y-6">
@@ -800,7 +808,7 @@ function IntervencionView({ bcvPrice }: { bcvPrice: number | null }) {
         </div>
         <div className="flex-1 px-4 py-5 sm:px-6">
           <p className="text-xs uppercase tracking-wider text-brand-green/40">
-            Tasa aplicada (+{(INTERVENCION_MARKUP * 100).toFixed(1)}%)
+            Tasa aplicada {usingRealRate ? "(intervención real)" : `(+${(INTERVENCION_MARKUP * 100).toFixed(1)}% estimado)`}
           </p>
           <p className="mt-1 font-mono text-2xl font-medium text-brand-yellow">{fmtNum(appliedRate, 4)}</p>
         </div>
@@ -1288,7 +1296,10 @@ export default function DashboardLayout({
             )}
 
             {activeView === "intervencion" && (
-              <IntervencionView bcvPrice={latestMarket?.bcvPrice ?? null} />
+              <IntervencionView
+                bcvPrice={latestMarket?.bcvPrice ?? null}
+                intervencionPrice={latestMarket?.intervencionPrice ?? null}
+              />
             )}
 
             {activeView === "settings" && (

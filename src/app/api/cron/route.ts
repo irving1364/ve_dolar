@@ -17,6 +17,8 @@ import {
   buildDailySummaryMessage,
 } from "@/lib/telegram";
 import { computeBestHours } from "@/lib/analysis";
+import { fetchTodayAperturas } from "@/lib/aperturas";
+import { fetchIntervencionRate } from "@/lib/hdavzla";
 import {
   computeMarketStats,
   evaluateSignal,
@@ -306,6 +308,51 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       console.error(`Failed to fetch ${exchange}:`, err);
       results.push({ source: `paralelo-${exchange}`, status: "error" });
     }
+  }
+
+  // Step 2.5: Aperturas de bancos (hdavzla.com) — best-effort, no bloquea el cron.
+  try {
+    const todayAperturas = await fetchTodayAperturas();
+    for (const entry of todayAperturas) {
+      await prisma.bankOpening.upsert({
+        where: {
+          date_bank_mechanism_time: {
+            date: entry.date,
+            bank: entry.bank,
+            mechanism: entry.mechanism,
+            time: entry.time,
+          },
+        },
+        create: {
+          date: entry.date,
+          bank: entry.bank,
+          mechanism: entry.mechanism,
+          time: entry.time,
+          duration: entry.duration,
+        },
+        update: { duration: entry.duration },
+      });
+    }
+    results.push({ source: "aperturas", status: "ok" });
+  } catch (err) {
+    console.warn("Failed to fetch/save aperturas:", err);
+    results.push({ source: "aperturas", status: "error" });
+  }
+
+  // Step 2.6: Tasa de intervencion real (hdavzla.com) — best-effort.
+  try {
+    const intervencionRate = await fetchIntervencionRate();
+    if (intervencionRate) {
+      await prisma.rate.create({
+        data: { source: "intervencion", price: intervencionRate },
+      });
+      results.push({ source: "intervencion", status: "ok" });
+    } else {
+      results.push({ source: "intervencion", status: "error" });
+    }
+  } catch (err) {
+    console.warn("Failed to fetch intervencion rate:", err);
+    results.push({ source: "intervencion", status: "error" });
   }
 
   // Step 3: Send per-user notifications

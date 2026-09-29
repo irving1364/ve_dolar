@@ -80,6 +80,19 @@ model Rate {
   @@index([source, exchange, fetchedAt])
 }
 
+model BankOpening {
+  id        Int      @id @default(autoincrement())
+  date      DateTime
+  bank      String
+  mechanism String
+  time      String
+  duration  String?
+  createdAt DateTime @default(now())
+
+  @@unique([date, bank, mechanism, time])
+  @@index([date])
+}
+
 model Trade {
   id          Int        @id @default(autoincrement())
   type        String

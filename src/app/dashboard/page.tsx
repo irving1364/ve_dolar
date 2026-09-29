@@ -75,6 +75,12 @@ export default async function DashboardPage() {
     select: { price: true },
   });
 
+  const latestIntervencion = await prisma.rate.findFirst({
+    where: { source: "intervencion" },
+    orderBy: { fetchedAt: "desc" },
+    select: { price: true },
+  });
+
   const latest = latestParalelo
     ? {
         price: latestParalelo.price,
@@ -83,6 +89,7 @@ export default async function DashboardPage() {
         buyVolume: latestParalelo.buyVolume,
         sellVolume: latestParalelo.sellVolume,
         bcvPrice: latestBcv?.price ?? null,
+        intervencionPrice: latestIntervencion?.price ?? null,
       }
     : null;
 

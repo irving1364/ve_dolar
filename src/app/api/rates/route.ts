@@ -60,6 +60,7 @@ export async function GET(request: NextRequest) {
     recentTotal,
     latestParalelo,
     latestBcv,
+    latestIntervencion,
     trades,
     tradesTotal,
   ] = await Promise.all([
@@ -107,6 +108,11 @@ export async function GET(request: NextRequest) {
     }),
     prisma.rate.findFirst({
       where: { source: "bcv" },
+      orderBy: { fetchedAt: "desc" },
+      select: { price: true },
+    }),
+    prisma.rate.findFirst({
+      where: { source: "intervencion" },
       orderBy: { fetchedAt: "desc" },
       select: { price: true },
     }),
@@ -218,6 +224,7 @@ export async function GET(request: NextRequest) {
           buyVolume: latestParalelo.buyVolume,
           sellVolume: latestParalelo.sellVolume,
           bcvPrice: latestBcv?.price ?? null,
+          intervencionPrice: latestIntervencion?.price ?? null,
         }
       : null,
     trades: trades.map((t) => ({
