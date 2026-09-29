@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "backfill:exchange": "node scripts/backfill-exchange.mjs",
-    "adopt-orphan-trades": "node scripts/adopt-orphan-trades.mjs"
+    "adopt-orphan-trades": "node scripts/adopt-orphan-trades.mjs",
+    "sync:aperturas": "node scripts/sync-aperturas.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
