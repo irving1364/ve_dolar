@@ -114,7 +114,7 @@ interface RatesResponse {
   tradesTotalPages: number;
 }
 
-type ViewType = "market" | "trades" | "ia" | "patterns" | "intervencion" | "alerts" | "settings";
+type ViewType = "market" | "trades" | "ia" | "patterns" | "aperturas" | "intervencion" | "alerts" | "settings";
 type TimeRange = "today" | "3d" | "week" | "month";
 type AdviceType = "sell" | "buy" | "analyze";
 
@@ -133,14 +133,15 @@ const ADVICE_CONFIG: {
   analyze: { label: "Analizar Trade", color: "bg-brand-green/80", hoverColor: "hover:bg-brand-green", textColor: "text-brand-cream", icon: "🔍" },
 };
 
-const NAV_ITEMS: { id: ViewType; label: string; icon: string }[] = [
-  { id: "market", label: "Mercado", icon: "📊" },
-  { id: "trades", label: "Trades", icon: "💰" },
-  { id: "ia", label: "IA", icon: "🤖" },
-  { id: "patterns", label: "Patrones", icon: "⏰" },
-  { id: "intervencion", label: "Intervención", icon: "🧮" },
-  { id: "alerts", label: "Alertas", icon: "🔔" },
-  { id: "settings", label: "Ajustes", icon: "⚙️" },
+const NAV_ITEMS: { id: ViewType; label: string }[] = [
+  { id: "market", label: "Mercado" },
+  { id: "trades", label: "Trades" },
+  { id: "ia", label: "IA" },
+  { id: "patterns", label: "Patrones" },
+  { id: "aperturas", label: "Aperturas" },
+  { id: "intervencion", label: "Intervención" },
+  { id: "alerts", label: "Alertas" },
+  { id: "settings", label: "Ajustes" },
 ];
 
 interface PriceAlertData {
@@ -1114,7 +1115,6 @@ export default function DashboardLayout({
                   : "text-brand-green/50 hover:bg-brand-green/5 hover:text-brand-green"
               }`}
             >
-              <span className="text-base">{item.icon}</span>
               {item.label}
               {item.id === "trades" && isAuthenticated && trades.filter((t) => t.status === "open").length > 0 && (
                 <span className="ml-auto inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-brand-green px-1.5 text-[10px] font-bold text-brand-cream">
@@ -1140,7 +1140,6 @@ export default function DashboardLayout({
             </button>
             <div>
               <h1 className="text-lg font-semibold text-brand-green">
-                {NAV_ITEMS.find((i) => i.id === activeView)?.icon}{" "}
                 {NAV_ITEMS.find((i) => i.id === activeView)?.label}
               </h1>
               <p className="text-xs text-brand-green/40">
@@ -1150,6 +1149,7 @@ export default function DashboardLayout({
                 {activeView === "patterns" && "Patrones horarios y mejores momentos para operar"}
                 {activeView === "intervencion" && "Cálculo de intervención digital sobre la tasa BCV"}
                 {activeView === "alerts" && "Recibe un aviso por Telegram cuando el precio cruce tu umbral"}
+                {activeView === "aperturas" && "Histórico de aperturas de mesa de cambio por banco"}
               </p>
             </div>
           </div>
@@ -1305,6 +1305,8 @@ export default function DashboardLayout({
             {activeView === "patterns" && (
               <PatternsView patterns={patterns} currentHour={currentHour} />
             )}
+
+            {activeView === "aperturas" && <AperturasView />}
 
             {activeView === "intervencion" && (
               <IntervencionView
@@ -1697,6 +1699,105 @@ function AlertsView({ currentPrice }: { currentPrice: number | null }) {
               </div>
             ))}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Aperturas View ──
+interface AperturaEntryData {
+  id: number;
+  date: string;
+  bank: string;
+  mechanism: string;
+  time: string;
+  duration: string | null;
+}
+
+function AperturasView() {
+  const [entries, setEntries] = useState<AperturaEntryData[]>([]);
+  const [summary, setSummary] = useState<{ bank: string; count: number }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [days, setDays] = useState(7);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`/api/aperturas?days=${days}`)
+      .then((r) => r.json())
+      .then((d) => {
+        setEntries(d.entries ?? []);
+        setSummary(d.summary ?? []);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [days]);
+
+  const fmtDate = (iso: string) =>
+    new Date(iso).toLocaleDateString("es-VE", { timeZone: "UTC", day: "2-digit", month: "2-digit", year: "numeric" });
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-brand-green/40">
+          Aperturas de mesa de cambio por banco, guardadas automáticamente desde hdavzla.com en cada corrida del cron.
+        </p>
+        <div className="flex overflow-hidden border border-brand-green/10">
+          {[7, 14, 30].map((d) => (
+            <button
+              key={d}
+              onClick={() => setDays(d)}
+              className={`px-3 py-1.5 text-xs font-medium transition ${
+                days === d ? "bg-brand-green text-brand-cream" : "text-brand-green/50 hover:bg-brand-green/5 hover:text-brand-green"
+              }`}
+            >
+              {d}d
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {summary.length > 0 && (
+        <div className="flex flex-wrap divide-x divide-brand-green/10 border-y border-brand-green/10">
+          {summary.map((s) => (
+            <div key={s.bank} className="px-4 py-3">
+              <p className="text-xs text-brand-green/40">{s.bank}</p>
+              <p className="font-mono text-lg font-semibold text-brand-green">{s.count}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {loading ? (
+        <p className="py-8 text-center text-sm text-brand-green/40">Cargando…</p>
+      ) : entries.length === 0 ? (
+        <div className="border border-brand-green/10 p-8 text-center text-sm text-brand-green/40">
+          No hay aperturas registradas todavía. Se van guardando automáticamente cada vez que corre el cron.
+        </div>
+      ) : (
+        <div className="overflow-x-auto border border-brand-green/10">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-brand-green/10 text-xs uppercase tracking-wider text-brand-green/40">
+                <th className="px-4 py-3 font-medium">Fecha</th>
+                <th className="px-4 py-3 font-medium">Banco</th>
+                <th className="px-4 py-3 font-medium">Mecanismo</th>
+                <th className="px-4 py-3 font-medium">Hora</th>
+                <th className="px-4 py-3 font-medium">Duración</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-brand-green/8">
+              {entries.map((e) => (
+                <tr key={e.id}>
+                  <td className="px-4 py-2.5 font-mono text-xs text-brand-green/50">{fmtDate(e.date)}</td>
+                  <td className="px-4 py-2.5 font-medium text-brand-green">{e.bank}</td>
+                  <td className="px-4 py-2.5 text-brand-green/70">{e.mechanism}</td>
+                  <td className="px-4 py-2.5 font-mono text-brand-green">{e.time}</td>
+                  <td className="px-4 py-2.5 text-brand-green/50">{e.duration ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
