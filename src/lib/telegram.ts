@@ -130,6 +130,19 @@ export function buildTargetReachedMessage(
   );
 }
 
+export function buildPriceAlertMessage(
+  direction: "above" | "below",
+  targetPrice: number,
+  currentPrice: number
+): string {
+  return (
+    `<b>🔔 Alerta de precio</b>\n` +
+    `El precio ${direction === "above" ? "subió por encima de" : "bajó por debajo de"} <b>${targetPrice.toFixed(2)} VES</b>\n` +
+    `Precio actual: <b>${currentPrice.toFixed(2)} VES</b>\n\n` +
+    `Esta alerta ya se cumplió y quedó desactivada. Crea una nueva desde el dashboard si quieres seguir monitoreando.`
+  );
+}
+
 export interface MarketStats {
   currentPrice: number;
   avgPrice: number;

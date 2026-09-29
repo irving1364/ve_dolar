@@ -17,6 +17,7 @@ model User {
   sessions      Session[]
   trades        Trade[]
   settings      UserSettings?
+  priceAlerts   PriceAlert[]
 }
 
 model Account {
@@ -91,6 +92,19 @@ model BankOpening {
 
   @@unique([date, bank, mechanism, time])
   @@index([date])
+}
+
+model PriceAlert {
+  id          Int       @id @default(autoincrement())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  direction   String // "above" | "below"
+  targetPrice Float
+  active      Boolean   @default(true)
+  triggeredAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model Trade {

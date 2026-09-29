@@ -114,7 +114,7 @@ interface RatesResponse {
   tradesTotalPages: number;
 }
 
-type ViewType = "market" | "trades" | "ia" | "patterns" | "intervencion" | "settings";
+type ViewType = "market" | "trades" | "ia" | "patterns" | "intervencion" | "alerts" | "settings";
 type TimeRange = "today" | "3d" | "week" | "month";
 type AdviceType = "sell" | "buy" | "analyze";
 
@@ -139,8 +139,18 @@ const NAV_ITEMS: { id: ViewType; label: string; icon: string }[] = [
   { id: "ia", label: "IA", icon: "🤖" },
   { id: "patterns", label: "Patrones", icon: "⏰" },
   { id: "intervencion", label: "Intervención", icon: "🧮" },
+  { id: "alerts", label: "Alertas", icon: "🔔" },
   { id: "settings", label: "Ajustes", icon: "⚙️" },
 ];
+
+interface PriceAlertData {
+  id: number;
+  direction: string;
+  targetPrice: number;
+  active: boolean;
+  triggeredAt: string | null;
+  createdAt: string;
+}
 
 const INTERVENCION_AMOUNTS = [100, 200, 300, 400, 500];
 const INTERVENCION_MARKUP = 0.005;
@@ -1139,6 +1149,7 @@ export default function DashboardLayout({
                 {activeView === "ia" && "Asesoría inteligente para decisiones de trading"}
                 {activeView === "patterns" && "Patrones horarios y mejores momentos para operar"}
                 {activeView === "intervencion" && "Cálculo de intervención digital sobre la tasa BCV"}
+                {activeView === "alerts" && "Recibe un aviso por Telegram cuando el precio cruce tu umbral"}
               </p>
             </div>
           </div>
@@ -1300,6 +1311,10 @@ export default function DashboardLayout({
                 bcvPrice={latestMarket?.bcvPrice ?? null}
                 intervencionPrice={latestMarket?.intervencionPrice ?? null}
               />
+            )}
+
+            {activeView === "alerts" && (
+              <AlertsView currentPrice={latestMarket?.price ?? null} />
             )}
 
             {activeView === "settings" && (
@@ -1550,6 +1565,138 @@ function TradePanelView({
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Alerts View ──
+function AlertsView({ currentPrice }: { currentPrice: number | null }) {
+  const [alerts, setAlerts] = useState<PriceAlertData[]>([]);
+  const [direction, setDirection] = useState<"above" | "below">("above");
+  const [targetPrice, setTargetPrice] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadAlerts = () => {
+    fetch("/api/alerts")
+      .then((r) => (r.status === 401 ? null : r.json()))
+      .then((d) => { if (d?.alerts) setAlerts(d.alerts); })
+      .catch(() => {});
+  };
+
+  useEffect(() => { loadAlerts(); }, []);
+
+  const createAlert = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setCreating(true);
+    try {
+      const res = await fetch("/api/alerts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ direction, targetPrice }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTargetPrice("");
+        loadAlerts();
+      } else {
+        setError(data.error ?? "No se pudo crear la alerta");
+      }
+    } catch {
+      setError("Error de conexión");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const deleteAlert = async (id: number) => {
+    await fetch(`/api/alerts/${id}`, { method: "DELETE" });
+    loadAlerts();
+  };
+
+  const activeAlerts = alerts.filter((a) => a.active);
+  const pastAlerts = alerts.filter((a) => !a.active);
+
+  return (
+    <div className="space-y-6">
+      <form onSubmit={createAlert} className="border border-brand-green/10 p-4">
+        <h2 className="mb-3 text-sm font-semibold text-brand-green">Nueva alerta</h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <select
+            value={direction}
+            onChange={(e) => setDirection(e.target.value as "above" | "below")}
+            className="rounded-none border border-brand-green/10 bg-brand-cream px-3 py-2 text-sm text-brand-green"
+          >
+            <option value="above">Cuando suba a</option>
+            <option value="below">Cuando baje a</option>
+          </select>
+          <input
+            type="number"
+            step="0.01"
+            required
+            value={targetPrice}
+            onChange={(e) => setTargetPrice(e.target.value)}
+            placeholder={currentPrice ? currentPrice.toFixed(2) : "Precio en VES"}
+            className="rounded-none border border-brand-green/10 px-3 py-2 text-sm text-brand-green placeholder:text-brand-green/30"
+          />
+          <button
+            type="submit"
+            disabled={creating}
+            className="rounded-none bg-brand-green px-4 py-2 text-sm font-medium text-brand-cream transition hover:bg-brand-green/90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {creating ? "Creando…" : "Crear alerta"}
+          </button>
+        </div>
+        {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+      </form>
+
+      <div>
+        <h2 className="mb-3 text-sm font-semibold text-brand-green">Alertas activas</h2>
+        {activeAlerts.length === 0 ? (
+          <div className="border border-brand-green/10 p-6 text-center text-sm text-brand-green/40">
+            No tienes alertas activas.
+          </div>
+        ) : (
+          <div className="divide-y divide-brand-green/8 border border-brand-green/10">
+            {activeAlerts.map((a) => (
+              <div key={a.id} className="flex items-center justify-between px-4 py-3">
+                <span className="text-sm text-brand-green">
+                  {a.direction === "above" ? "Sube a" : "Baja a"}{" "}
+                  <span className="font-mono font-semibold">{fmtNum(a.targetPrice)} VES</span>
+                </span>
+                <button
+                  onClick={() => deleteAlert(a.id)}
+                  className="rounded-none bg-brand-green/5 px-2 py-1 text-xs text-brand-green/60 transition hover:bg-red-100 hover:text-red-600"
+                >
+                  Eliminar
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {pastAlerts.length > 0 && (
+        <div>
+          <h2 className="mb-3 text-sm font-semibold text-brand-green">Historial</h2>
+          <div className="divide-y divide-brand-green/8 border border-brand-green/10">
+            {pastAlerts.slice(0, 10).map((a) => (
+              <div key={a.id} className="flex items-center justify-between px-4 py-3 text-sm text-brand-green/50">
+                <span>
+                  {a.direction === "above" ? "Subió a" : "Bajó a"}{" "}
+                  <span className="font-mono">{fmtNum(a.targetPrice)} VES</span>
+                </span>
+                <span className="text-xs">
+                  {a.triggeredAt
+                    ? new Date(a.triggeredAt).toLocaleString("es-VE", { timeZone: "America/Caracas", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+                    : "—"}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

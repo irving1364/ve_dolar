@@ -12,6 +12,7 @@ import {
   buildSellSignalMessage,
   buildBuySignalMessage,
   buildStableStatusMessage,
+  buildPriceAlertMessage,
   buildBestHoursSection,
   buildExchangeComparisonSection,
   buildDailySummaryMessage,
@@ -76,6 +77,35 @@ async function evaluateTradesForUser(
         buildTargetReachedMessage(t, currentPrice)
       );
     }
+  }
+}
+
+async function evaluatePriceAlertsForUser(
+  userId: string,
+  currentPrice: number,
+  chatId: string
+): Promise<void> {
+  const activeAlerts = await prisma.priceAlert.findMany({
+    where: { userId, active: true },
+  });
+
+  for (const alert of activeAlerts) {
+    const direction = alert.direction as "above" | "below";
+    const reached =
+      direction === "above"
+        ? currentPrice >= alert.targetPrice
+        : currentPrice <= alert.targetPrice;
+
+    if (!reached) continue;
+
+    await sendTelegram(
+      chatId,
+      buildPriceAlertMessage(direction, alert.targetPrice, currentPrice)
+    );
+    await prisma.priceAlert.update({
+      where: { id: alert.id },
+      data: { active: false, triggeredAt: new Date() },
+    });
   }
 }
 
@@ -381,6 +411,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         } catch {
           console.warn(
             `Trade evaluation failed for user ${userSettings.userId}`
+          );
+        }
+
+        try {
+          await evaluatePriceAlertsForUser(
+            userSettings.userId,
+            paraleloPrice,
+            chatId
+          );
+        } catch {
+          console.warn(
+            `Price alert evaluation failed for user ${userSettings.userId}`
           );
         }
 
