@@ -1084,7 +1084,7 @@ export default function DashboardLayout({
         }`}
       >
         {/* Logo */}
-        <div className="flex items-center justify-between border-b border-brand-green/8 px-5 py-4">
+        <div className="flex h-20 items-center justify-between border-b border-brand-green/8 px-5">
           <a href="/dashboard" className="flex items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-none bg-brand-green text-sm font-bold text-brand-cream">
               V
@@ -1131,7 +1131,7 @@ export default function DashboardLayout({
       {/* ═══ MAIN CONTENT ═══ */}
       <div className="flex flex-1 flex-col">
         {/* Top bar */}
-        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-brand-green/8 bg-brand-cream/90 px-4 py-3 sm:px-6">
+        <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b border-brand-green/8 bg-brand-cream/90 px-4 sm:px-6">
           <div className="flex items-center gap-3">
             <button onClick={() => setSidebarOpen(true)} className="rounded-none p-1.5 text-brand-green/50 transition hover:bg-brand-green/5 hover:text-brand-green lg:hidden">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1740,7 +1740,7 @@ function AperturasView() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <p className="text-xs text-brand-green/40">
-          Aperturas de mesa de cambio por banco, guardadas automáticamente desde hdavzla.com en cada corrida del cron.
+          Historial de aperturas de mesa de cambio por banco, actualizado en cada corrida del cron.
         </p>
         <div className="flex overflow-hidden border border-brand-green/10">
           {[7, 14, 30].map((d) => (

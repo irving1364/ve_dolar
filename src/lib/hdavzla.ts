@@ -12,9 +12,14 @@ interface TasaActual {
  */
 export async function fetchIntervencionRate(): Promise<number | null> {
   const res = await fetch(TASAS_ACTUAL_URL, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+      Accept: "application/json",
+    },
     signal: AbortSignal.timeout(10000),
   });
-  if (!res.ok) return null;
+  if (!res.ok) throw new Error(`HTTP ${res.status} al leer tasas/actual`);
 
   const data: { data?: TasaActual[] } = await res.json();
   const row = data.data?.find((d) => d.moneda === "INTERVENCION");

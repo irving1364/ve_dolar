@@ -281,7 +281,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
-  const results: { source: string; status: string }[] = [];
+  const results: { source: string; status: string; detail?: string }[] = [];
   const exchangeDepths: ExchangeDepth[] = [];
   let paraleloPrice = 0;
 
@@ -363,10 +363,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         update: { duration: entry.duration },
       });
     }
-    results.push({ source: "aperturas", status: "ok" });
+    results.push({ source: "aperturas", status: "ok", detail: `${todayAperturas.length} entradas` });
   } catch (err) {
     console.warn("Failed to fetch/save aperturas:", err);
-    results.push({ source: "aperturas", status: "error" });
+    results.push({
+      source: "aperturas",
+      status: "error",
+      detail: err instanceof Error ? err.message : String(err),
+    });
   }
 
   // Step 2.6: Tasa de intervencion real (hdavzla.com) — best-effort.
@@ -376,13 +380,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       await prisma.rate.create({
         data: { source: "intervencion", price: intervencionRate },
       });
-      results.push({ source: "intervencion", status: "ok" });
+      results.push({ source: "intervencion", status: "ok", detail: String(intervencionRate) });
     } else {
-      results.push({ source: "intervencion", status: "error" });
+      results.push({ source: "intervencion", status: "error", detail: "sin dato INTERVENCION en la respuesta" });
     }
   } catch (err) {
     console.warn("Failed to fetch intervencion rate:", err);
-    results.push({ source: "intervencion", status: "error" });
+    results.push({
+      source: "intervencion",
+      status: "error",
+      detail: err instanceof Error ? err.message : String(err),
+    });
   }
 
   // Step 3: Send per-user notifications
