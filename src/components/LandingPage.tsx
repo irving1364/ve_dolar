@@ -63,10 +63,10 @@ export default function LandingPage() {
       <JsonLdSoftwareApp />
       <div className="min-h-screen bg-brand-cream font-sans text-brand-green selection:bg-brand-yellow selection:text-brand-cream">
         {/* ═══ TICKER ═══ */}
-        <div className="hidden items-center gap-8 whitespace-nowrap bg-brand-green px-6 py-2 font-mono text-xs tracking-wide text-brand-cream sm:flex">
-          <span className="text-brand-yellow/80">USDT/VES · BINANCE P2P</span>
-          <span className="text-brand-cream/50">Monitoreo en tiempo real · Señales de trading · Asesoría IA</span>
-          <span className="ml-auto text-brand-cream/50">Datos de Binance P2P · No es asesoría financiera</span>
+        <div className="hidden min-w-0 items-center gap-8 overflow-hidden whitespace-nowrap bg-brand-green px-6 py-2 font-mono text-xs tracking-wide text-brand-cream sm:flex">
+          <span className="shrink-0 text-brand-yellow/80">USDT/VES · BINANCE P2P</span>
+          <span className="truncate text-brand-cream/50">Monitoreo en tiempo real · Señales de trading · Asesoría IA</span>
+          <span className="ml-auto hidden shrink-0 text-brand-cream/50 lg:inline">Datos de Binance P2P · No es asesoría financiera</span>
         </div>
 
         {/* ═══ NAVBAR ═══ */}

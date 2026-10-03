@@ -14,6 +14,8 @@ const config: Config = {
           cream: "rgb(var(--brand-cream) / <alpha-value>)",
           yellow: "rgb(var(--brand-yellow) / <alpha-value>)",
           green: "rgb(var(--brand-green) / <alpha-value>)",
+          up: "rgb(var(--brand-up) / <alpha-value>)",
+          down: "rgb(var(--brand-down) / <alpha-value>)",
         },
       },
       fontFamily: {

@@ -126,11 +126,11 @@ const TIME_RANGE_OPTIONS: { value: TimeRange; label: string }[] = [
 ];
 
 const ADVICE_CONFIG: {
-  [K in AdviceType]: { label: string; color: string; hoverColor: string; textColor: string; icon: string };
+  [K in AdviceType]: { label: string; color: string; hoverColor: string; textColor: string };
 } = {
-  sell: { label: "Venta", color: "bg-brand-yellow", hoverColor: "hover:bg-brand-yellow/90", textColor: "text-brand-green", icon: "💰" },
-  buy: { label: "Compra", color: "bg-brand-green", hoverColor: "hover:bg-brand-green/90", textColor: "text-brand-cream", icon: "🟢" },
-  analyze: { label: "Analizar Trade", color: "bg-brand-green/80", hoverColor: "hover:bg-brand-green", textColor: "text-brand-cream", icon: "🔍" },
+  sell: { label: "Venta", color: "bg-brand-yellow", hoverColor: "hover:bg-brand-yellow/90", textColor: "text-brand-cream" },
+  buy: { label: "Compra", color: "bg-brand-green", hoverColor: "hover:bg-brand-green/90", textColor: "text-brand-cream" },
+  analyze: { label: "Analizar Trade", color: "bg-brand-green/80", hoverColor: "hover:bg-brand-green", textColor: "text-brand-cream" },
 };
 
 const NAV_ITEMS: { id: ViewType; label: string }[] = [
@@ -195,6 +195,10 @@ function mergeExchangeSeries(
   for (const [ex, series] of Object.entries(extra)) {
     for (const p of series) {
       const bucket = (byTime[p.time] ??= { time: p.time, ts: p.ts ?? 0 });
+      // Un punto que se aleja mas de 3% de la referencia es ruido del libro P2P
+      // (una orden suelta), no mercado: se omite para no aplastar la escala.
+      const ref = bucket.binance;
+      if (typeof ref === "number" && Math.abs(p.price - ref) / ref > 0.03) continue;
       bucket[ex] = p.price;
       if (p.ts !== undefined && (bucket.ts as number) < p.ts) bucket.ts = p.ts;
     }
@@ -203,13 +207,39 @@ function mergeExchangeSeries(
   return Object.values(byTime).sort((a, b) => (a.ts as number) - (b.ts as number));
 }
 
+type SignalTone = "sell" | "buy" | "stable" | "wait";
+
+const SIGNAL_TONE_TEXT: Record<SignalTone, string> = {
+  sell: "text-brand-yellow",
+  buy: "text-brand-up",
+  stable: "text-brand-green",
+  wait: "text-brand-green/50",
+};
+
+const SIGNAL_TONE_DOT: Record<SignalTone, string> = {
+  sell: "bg-brand-yellow",
+  buy: "bg-brand-up",
+  stable: "bg-brand-green/60",
+  wait: "bg-brand-green/30",
+};
+
+function StatCell({ label, value, hint, valueClass = "text-brand-green" }: { label: string; value: string; hint?: string; valueClass?: string }) {
+  return (
+    <div className="border-b border-r border-brand-green/10 px-4 py-4 sm:px-5">
+      <p className="text-[11px] uppercase tracking-[0.12em] text-brand-green/40">{label}</p>
+      <p className={`mt-1.5 font-mono text-lg font-medium tabular-nums ${valueClass}`}>{value}</p>
+      {hint && <p className="mt-0.5 text-xs text-brand-green/40">{hint}</p>}
+    </div>
+  );
+}
+
 // ── Login Prompt component ──
 function LoginPrompt() {
   return (
     <div className="relative">
       <div className="flex items-center justify-center rounded-none bg-brand-green/5 p-12">
         <div className="text-center">
-          <p className="mb-4 text-lg font-semibold text-brand-green">🔒 Inicia sesión para acceder</p>
+          <p className="mb-4 text-lg font-semibold text-brand-green">Inicia sesión para acceder</p>
           <button
             onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
             className="inline-flex items-center gap-2 rounded-none bg-brand-green px-5 py-2.5 text-sm font-medium text-brand-cream transition hover:bg-brand-green/90"
@@ -299,136 +329,141 @@ function MarketView({
   const marketStats = latestMarket ? computeMarketStats(latestMarket, paraleloHistory) : null;
   const signalLevel = marketStats ? evaluateSignal(marketStats) : null;
 
-  let signal: { text: string; color: string; emoji: string } = { text: "Esperar", color: "text-brand-green/40", emoji: "⏸️" };
+  let signal: { title: string; detail: string; tone: SignalTone } = { title: "Esperar", detail: "Sin señal clara", tone: "wait" };
   if (marketStats) {
-    if (signalLevel === "strong_sell") signal = { text: "🟢 VENDE USDT — Precio alto vs promedio", color: "text-brand-green", emoji: "🟢" };
-    else if (signalLevel === "sell") signal = { text: "✅ Vende — Precio por encima del promedio", color: "text-brand-green", emoji: "✅" };
-    else if (signalLevel === "strong_buy") signal = { text: "🟣 COMPRA USDT — Precio bajo vs promedio", color: "text-brand-green", emoji: "🟣" };
-    else if (signalLevel === "buy") signal = { text: "✅ Compra — Precio por debajo del promedio", color: "text-brand-green", emoji: "✅" };
-    else if (Math.abs(marketStats.pctAboveAvg) < 0.3) signal = { text: "Estable — Precio cerca del promedio", color: "text-brand-yellow", emoji: "⚖️" };
-    else signal = { text: "Esperar — Sin señal clara", color: "text-brand-green/40", emoji: "⏸️" };
+    if (signalLevel === "strong_sell") signal = { title: "Vender USDT", detail: "Precio alto frente al promedio de 48h", tone: "sell" };
+    else if (signalLevel === "sell") signal = { title: "Vender", detail: "Precio por encima del promedio", tone: "sell" };
+    else if (signalLevel === "strong_buy") signal = { title: "Comprar USDT", detail: "Precio bajo frente al promedio de 48h", tone: "buy" };
+    else if (signalLevel === "buy") signal = { title: "Comprar", detail: "Precio por debajo del promedio", tone: "buy" };
+    else if (Math.abs(marketStats.pctAboveAvg) < 0.3) signal = { title: "Estable", detail: "Precio cerca del promedio de 48h", tone: "stable" };
+    else signal = { title: "Esperar", detail: "Sin señal clara todavía", tone: "wait" };
   }
 
+  const pctVsAvg = marketStats?.pctAboveAvg ?? null;
   const chartHeight = paraleloHistory.length > 200 ? 400 : 300;
   const mergedChartData = mergeExchangeSeries(chartData, exchangeHistory);
   const extraExchanges = Object.keys(exchangeHistory).filter((k) => k !== "binance");
 
   return (
-    <div className="space-y-6">
-      {/* Market Cards */}
-      {latestMarket && (latestMarket.buyVolume ?? 0) > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-none border border-brand-green/10 p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-brand-green/40">Mejor Compra</p>
-            <p className="mt-1 text-2xl font-bold text-brand-green">{latestMarket.buyPrice ? `${fmtNum(latestMarket.buyPrice)} VES` : "—"}</p>
-            <p className="mt-0.5 text-xs text-brand-green/40">Vol: {latestMarket.buyVolume ? `${fmtNum(latestMarket.buyVolume, 0)} USDT` : "—"}</p>
+    <div className="space-y-8">
+      {/* Precio actual + señal */}
+      {latestMarket && (
+        <section className="border-t border-brand-green/10">
+          <div className="grid grid-cols-1 lg:grid-cols-[1.35fr_1fr]">
+            <div className="border-b border-brand-green/10 px-4 py-7 sm:px-6 lg:border-r">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-brand-green/40">Tasa paralela · Binance P2P</p>
+              <p className="mt-3 font-mono text-5xl font-medium tracking-tight text-brand-green sm:text-6xl">
+                {fmtNum(latestMarket.price)}
+                <span className="ml-2 text-xl text-brand-green/40">VES</span>
+              </p>
+              <p className="mt-3 text-sm text-brand-green/50">
+                {avgParaleloPrice > 0 ? (
+                  <>
+                    Promedio 48h <span className="font-mono text-brand-green/70">{fmtNum(avgParaleloPrice)}</span>
+                    {pctVsAvg !== null && (
+                      <span className={`ml-2 font-mono ${pctVsAvg > 0 ? "text-brand-up" : pctVsAvg < 0 ? "text-brand-down" : "text-brand-green/50"}`}>
+                        {pctVsAvg > 0 ? "+" : ""}{pctVsAvg.toFixed(2)}%
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  "Calculando promedio…"
+                )}
+                {bcvLatest && (
+                  <>
+                    <span className="mx-2 text-brand-green/20">·</span>
+                    BCV <span className="font-mono text-brand-green/70">{fmtNum(bcvLatest)}</span>
+                  </>
+                )}
+              </p>
+            </div>
+            <div className="border-b border-brand-green/10 px-4 py-7 sm:px-6">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-brand-green/40">Señal de trading</p>
+              <p className={`mt-3 flex items-center gap-3 text-3xl font-bold ${SIGNAL_TONE_TEXT[signal.tone]}`}>
+                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${SIGNAL_TONE_DOT[signal.tone]}`} />
+                {signal.title}
+              </p>
+              <p className="mt-3 text-sm text-brand-green/50">{signal.detail}</p>
+            </div>
           </div>
-          <div className="rounded-none border border-brand-green/10 p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-brand-green/40">Mejor Venta</p>
-            <p className="mt-1 text-2xl font-bold text-brand-green">{latestMarket.sellPrice ? `${fmtNum(latestMarket.sellPrice)} VES` : "—"}</p>
-            <p className="mt-0.5 text-xs text-brand-green/40">Vol: {latestMarket.sellVolume ? `${fmtNum(latestMarket.sellVolume, 0)} USDT` : "—"}</p>
-          </div>
-          <div className="rounded-none border border-brand-green/10 p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-brand-green/40">Spread</p>
-            <p className="mt-1 text-2xl font-bold text-brand-green">{marketSpread !== null ? `${fmtNum(marketSpread)} VES` : "—"}</p>
-            <p className="mt-0.5 text-xs text-brand-green/40">{marketSpreadPct !== null ? `${marketSpreadPct.toFixed(3)}%` : "—"}</p>
-          </div>
-          <div className={`rounded-none border p-4 ${
-            signal.emoji === "🟢" ? "border-brand-green/20 bg-brand-green/5"
-            : signal.emoji === "🟣" ? "border-brand-green/20 bg-brand-green/5"
-            : signal.emoji === "⚖️" ? "border-brand-yellow/30 bg-brand-yellow/5"
-            : "border-brand-green/10"
-          }`}>
-            <p className="text-xs font-medium uppercase tracking-wider text-brand-green/40">Señal de Trading</p>
-            <p className={`mt-1 text-lg font-bold ${signal.color}`}>{signal.emoji} {signal.text}</p>
-            <p className="mt-0.5 text-xs text-brand-green/40">
-              {avgParaleloPrice > 0
-                ? `Prom. 48h: ${fmtNum(avgParaleloPrice)} VES · Actual: ${fmtNum(latestMarket?.price ?? 0)} VES`
-                : "Calculando promedio…"}
-            </p>
-          </div>
-        </div>
-      )}
 
-      {/* Current Hour Pattern */}
-      {currentPattern && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded-none border border-brand-green/10 p-3">
-            <p className="text-xs text-brand-green/40">Hora actual (VET)</p>
-            <p className="text-lg font-semibold text-brand-green">{getHourLabel(currentHour)}</p>
+          <div className="-mr-px grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+            <StatCell label="Mejor compra" value={latestMarket.buyPrice ? fmtNum(latestMarket.buyPrice) : "—"} hint={latestMarket.buyVolume ? `Vol. ${fmtNum(latestMarket.buyVolume, 0)} USDT` : undefined} />
+            <StatCell label="Mejor venta" value={latestMarket.sellPrice ? fmtNum(latestMarket.sellPrice) : "—"} hint={latestMarket.sellVolume ? `Vol. ${fmtNum(latestMarket.sellVolume, 0)} USDT` : undefined} />
+            <StatCell label="Spread" value={marketSpread !== null ? fmtNum(marketSpread) : "—"} hint={marketSpreadPct !== null ? `${marketSpreadPct.toFixed(3)}%` : undefined} />
+            <StatCell label="Hora actual (VET)" value={getHourLabel(currentHour)} />
+            <StatCell label="Prom. de la hora" value={currentPattern ? fmtNum(currentPattern.avgPrice) : "—"} />
+            <StatCell
+              label="Tendencia horaria"
+              value={trend === "subiendo" ? "Subiendo ↑" : trend === "bajando" ? "Bajando ↓" : "—"}
+              valueClass={trend === "subiendo" ? "text-brand-up" : trend === "bajando" ? "text-brand-down" : "text-brand-green"}
+            />
           </div>
-          <div className="rounded-none border border-brand-green/10 p-3">
-            <p className="text-xs text-brand-green/40">Precio prom. histórico</p>
-            <p className="text-lg font-semibold text-brand-green">{fmtNum(currentPattern.avgPrice)} VES</p>
-          </div>
-          <div className="rounded-none border border-brand-green/10 p-3">
-            <p className="text-xs text-brand-green/40">Tendencia horaria</p>
-            <p className="text-lg font-semibold text-brand-green">
-              {trend === "subiendo" ? "📈 Subiendo" : trend === "bajando" ? "📉 Bajando" : "—"}
-            </p>
-          </div>
-        </div>
+        </section>
       )}
 
       {/* Exchange Comparison */}
-      {latestExchanges.some((e) => e && e.buyPrice && e.sellPrice) && (
-        <div className="rounded-none border border-brand-green/10 p-4">
-          <h3 className="mb-3 text-sm font-semibold text-brand-green">💱 Comparativa de Exchanges</h3>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {latestExchanges.filter((e): e is ExchangeSnapshot => !!e && (e.buyPrice ?? 0) > 0 && (e.sellPrice ?? 0) > 0).map((e) => (
-              <div key={e.exchange} className="rounded-none border border-brand-green/5 p-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold text-brand-green">{EXCHANGE_NAMES[e.exchange] ?? e.exchange}</p>
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: EXCHANGE_COLORS[e.exchange] ?? "#2d3a35" }} />
+      {latestExchanges.some((e) => e && e.buyPrice && e.sellPrice) && (() => {
+        const valid = latestExchanges.filter((e): e is ExchangeSnapshot => !!e && (e.buyPrice ?? 0) > 0 && (e.sellPrice ?? 0) > 0);
+        const cheapestBuy = valid.length >= 2 ? [...valid].sort((a, b) => (a.buyPrice ?? 0) - (b.buyPrice ?? 0))[0] : null;
+        const bestSell = valid.length >= 2 ? [...valid].sort((a, b) => (b.sellPrice ?? 0) - (a.sellPrice ?? 0))[0] : null;
+        return (
+          <section>
+            <h3 className="mb-3 text-lg font-semibold text-brand-green">Comparativa de exchanges</h3>
+            <div className="grid grid-cols-1 border-y border-brand-green/10 sm:grid-cols-3">
+              {valid.map((e, i) => (
+                <div key={e.exchange} className={`px-4 py-4 sm:px-5 ${i > 0 ? "border-t border-brand-green/10 sm:border-l sm:border-t-0" : ""}`}>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-brand-green">{EXCHANGE_NAMES[e.exchange] ?? e.exchange}</p>
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: EXCHANGE_COLORS[e.exchange] ?? "#2d3a35" }} />
+                  </div>
+                  <dl className="mt-3 space-y-1.5 text-sm">
+                    <div className="flex items-baseline justify-between">
+                      <dt className="text-brand-green/40">Comprar</dt>
+                      <dd className="font-mono tabular-nums text-brand-green">{e.buyPrice ? fmtNum(e.buyPrice) : "—"}</dd>
+                    </div>
+                    <div className="flex items-baseline justify-between">
+                      <dt className="text-brand-green/40">Vender</dt>
+                      <dd className="font-mono tabular-nums text-brand-green">{e.sellPrice ? fmtNum(e.sellPrice) : "—"}</dd>
+                    </div>
+                    <div className="flex items-baseline justify-between">
+                      <dt className="text-brand-green/40">Vol. compra / venta</dt>
+                      <dd className="font-mono text-xs tabular-nums text-brand-green/50">
+                        {e.buyVolume ? `${(e.buyVolume / 1000).toFixed(0)}K` : "—"} / {e.sellVolume ? `${(e.sellVolume / 1000).toFixed(0)}K` : "—"}
+                      </dd>
+                    </div>
+                  </dl>
                 </div>
-                <div className="mt-2 flex items-center justify-between text-xs">
-                  <span className="text-brand-green/40">Comprar</span>
-                  <span className="font-mono font-semibold text-brand-green">{e.buyPrice ? fmtNum(e.buyPrice) : "—"} VES</span>
-                </div>
-                <div className="mt-1 flex items-center justify-between text-xs">
-                  <span className="text-brand-green/40">Vender</span>
-                  <span className="font-mono font-semibold text-brand-green">{e.sellPrice ? fmtNum(e.sellPrice) : "—"} VES</span>
-                </div>
-                <div className="mt-1 flex items-center justify-between text-xs">
-                  <span className="text-brand-green/40">Vol. compra/venta</span>
-                  <span className="font-mono text-brand-green/60">
-                    {e.buyVolume ? `${(e.buyVolume / 1000).toFixed(0)}K` : "—"} / {e.sellVolume ? `${(e.sellVolume / 1000).toFixed(0)}K` : "—"}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-          {(() => {
-            const valid = latestExchanges.filter((e): e is ExchangeSnapshot => !!e && (e.buyPrice ?? 0) > 0 && (e.sellPrice ?? 0) > 0);
-            if (valid.length < 2) return null;
-            const cheapestBuy = [...valid].sort((a, b) => (a.buyPrice ?? 0) - (b.buyPrice ?? 0))[0];
-            const bestSell = [...valid].sort((a, b) => (b.sellPrice ?? 0) - (a.sellPrice ?? 0))[0];
-            return (
-              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="rounded-none border border-brand-green/10 bg-brand-green/5 px-3 py-2.5 text-sm">
-                  <span className="text-brand-green/50">🟢 Comprar más barato en </span>
+              ))}
+            </div>
+            {cheapestBuy && bestSell && (
+              <div className="mt-3 flex flex-wrap gap-x-8 gap-y-1.5 text-sm">
+                <p>
+                  <span className="font-medium text-brand-up">Comprar más barato</span>
+                  <span className="text-brand-green/40"> en </span>
                   <span className="font-semibold text-brand-green">{EXCHANGE_NAMES[cheapestBuy.exchange] ?? cheapestBuy.exchange}</span>
-                  <span className="ml-1 font-mono font-semibold text-brand-green">{cheapestBuy.buyPrice ? fmtNum(cheapestBuy.buyPrice) : "—"} VES</span>
-                </div>
-                <div className="rounded-none border border-brand-yellow/20 bg-brand-yellow/5 px-3 py-2.5 text-sm">
-                  <span className="text-brand-green/50">💰 Vender más caro en </span>
+                  <span className="ml-2 font-mono tabular-nums text-brand-green">{cheapestBuy.buyPrice ? fmtNum(cheapestBuy.buyPrice) : "—"}</span>
+                </p>
+                <p>
+                  <span className="font-medium text-brand-yellow">Vender más caro</span>
+                  <span className="text-brand-green/40"> en </span>
                   <span className="font-semibold text-brand-green">{EXCHANGE_NAMES[bestSell.exchange] ?? bestSell.exchange}</span>
-                  <span className="ml-1 font-mono font-semibold text-brand-green">{bestSell.sellPrice ? fmtNum(bestSell.sellPrice) : "—"} VES</span>
-                </div>
+                  <span className="ml-2 font-mono tabular-nums text-brand-green">{bestSell.sellPrice ? fmtNum(bestSell.sellPrice) : "—"}</span>
+                </p>
               </div>
-            );
-          })()}
-        </div>
-      )}
+            )}
+          </section>
+        );
+      })()}
 
       {/* Recent Records */}
       {recentRecords.length > 0 && (
-        <div className="rounded-none border border-brand-green/10 p-4">
-          <h3 className="mb-4 text-sm font-semibold text-brand-green">📋 Registros Recientes</h3>
-          <div className="overflow-x-auto">
+        <section>
+          <h3 className="mb-3 text-lg font-semibold text-brand-green">Registros recientes</h3>
+          <div className="overflow-x-auto border-y border-brand-green/10">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-brand-green/8 text-brand-green/40">
+                <tr className="border-b border-brand-green/10 text-brand-green/40">
                   <th className="pb-2 pr-3 font-medium">Fuente</th>
                   <th className="pb-2 pr-3 text-right font-medium">Precio</th>
                   <th className="pb-2 pr-3 text-right font-medium">Compra</th>
@@ -436,9 +471,9 @@ function MarketView({
                   <th className="pb-2 text-right font-medium">Hora</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-brand-green/8">
+              <tbody className="divide-y divide-brand-green/10">
                 {recentRecords.slice(0, 10).map((r, i) => (
-                  <tr key={i} className="hover:bg-brand-green/3">
+                  <tr key={i} className="hover:bg-brand-green/5">
                     <td className="py-1.5 pr-3 font-medium text-brand-green">
                       {r.source === "paralelo" && r.exchange
                         ? EXCHANGE_NAMES[r.exchange] ?? r.exchange
@@ -455,13 +490,13 @@ function MarketView({
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
       )}
 
       {/* Chart Section */}
-      <div>
+      <section>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-xl font-semibold text-brand-green">Evolución Tasa Paralela</h2>
+          <h2 className="text-lg font-semibold text-brand-green">Evolución de la tasa paralela</h2>
           <div className="flex items-center gap-2">
             {isFetching && <span className="animate-pulse text-xs text-brand-green/40">Cargando…</span>}
             <div className="flex overflow-hidden rounded-none border border-brand-green/10">
@@ -480,54 +515,54 @@ function MarketView({
           </div>
         </div>
 
-        <div className="rounded-none border border-brand-green/10 p-4">
+        <div className="border-y border-brand-green/10 py-4">
           {chartData.length === 0 ? (
             <p className="py-12 text-center text-brand-green/40">No hay datos disponibles. Espera a que el cron job recolecte tasas.</p>
           ) : (
             <>
-              <div className="mb-2 flex flex-wrap items-center gap-4 text-xs text-brand-green/40">
-                <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: EXCHANGE_COLORS.binance }} /> Binance (referencia)</span>
+              <div className="mb-3 flex flex-wrap items-center gap-4 text-xs text-brand-green/40">
+                <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: EXCHANGE_COLORS.binance }} /> Binance (referencia)</span>
                 {extraExchanges.map((ex) => (
-                  <span key={ex} className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: EXCHANGE_COLORS[ex] ?? "#9A9484" }} /> {EXCHANGE_NAMES[ex] ?? ex}</span>
+                  <span key={ex} className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 rounded-full opacity-70" style={{ backgroundColor: EXCHANGE_COLORS[ex] ?? "#9A9484" }} /> {EXCHANGE_NAMES[ex] ?? ex}</span>
                 ))}
               </div>
               <ResponsiveContainer width="100%" height={chartHeight}>
                 <LineChart data={mergedChartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid, #ECE7DD)" />
-                  <XAxis dataKey="time" tick={{ fill: "var(--chart-axis, #9A9484)", fontSize: 11 }} tickLine={false} interval="preserveStartEnd" />
-                  <YAxis domain={["auto", "auto"]} tick={{ fill: "var(--chart-axis, #9A9484)", fontSize: 11 }} tickLine={false} tickFormatter={(v: number) => `${v.toFixed(0)}`} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid, #ECE7DD)" vertical={false} />
+                  <XAxis dataKey="time" tick={{ fill: "var(--chart-axis, #9A9484)", fontSize: 11 }} tickLine={false} axisLine={false} minTickGap={48} />
+                  <YAxis domain={["auto", "auto"]} tick={{ fill: "var(--chart-axis, #9A9484)", fontSize: 11 }} tickLine={false} axisLine={false} width={44} tickFormatter={(v: number) => `${v.toFixed(0)}`} />
                   <Tooltip contentStyle={{ backgroundColor: "var(--chart-tooltip-bg, #FFFFFF)", border: "1px solid var(--chart-tooltip-border, #E8E3D9)", borderRadius: 0, color: "var(--chart-green, #2d3a35)", boxShadow: "var(--chart-shadow, 0 4px 12px rgba(45,58,53,0.08))" }} formatter={(value, name) => [`${Number(value).toFixed(2)} VES`, EXCHANGE_NAMES[String(name)] ?? String(name)]} />
                   {bcvLatest && (
                     <ReferenceLine y={bcvLatest} stroke="var(--chart-green, #2d3a35)" strokeDasharray="6 4" strokeWidth={1.5} label={{ value: `BCV ${bcvLatest.toFixed(2)}`, fill: "var(--chart-green, #2d3a35)", fontSize: 11, position: "insideTopLeft" }} />
                   )}
                   <Line type="monotone" dataKey="binance" stroke={EXCHANGE_COLORS.binance} strokeWidth={2.5} dot={false} activeDot={{ r: 4, fill: EXCHANGE_COLORS.binance }} />
                   {extraExchanges.map((ex) => (
-                    <Line key={ex} type="monotone" dataKey={ex} stroke={EXCHANGE_COLORS[ex] ?? "#9A9484"} strokeWidth={1.5} strokeDasharray="4 3" dot={false} activeDot={{ r: 3 }} />
+                    <Line key={ex} type="monotone" dataKey={ex} stroke={EXCHANGE_COLORS[ex] ?? "#9A9484"} strokeWidth={1.25} strokeOpacity={0.65} strokeDasharray="4 3" dot={false} activeDot={{ r: 3 }} connectNulls />
                   ))}
                 </LineChart>
               </ResponsiveContainer>
 
               {/* Volume Chart */}
-              <div className="mt-2">
+              <div className="mt-4">
                 <div className="mb-2 flex items-center gap-4 text-xs text-brand-green/40">
-                  <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-brand-green/60" /> Vol. Compra</span>
-                  <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-brand-yellow/70" /> Vol. Venta</span>
+                  <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 bg-brand-green/50" /> Vol. compra</span>
+                  <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-2 bg-brand-yellow/60" /> Vol. venta</span>
                 </div>
                 <ResponsiveContainer width="100%" height={120}>
                   <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid, #ECE7DD)" />
-                    <XAxis dataKey="time" tick={{ fill: "var(--chart-axis, #9A9484)", fontSize: 10 }} tickLine={false} interval="preserveStartEnd" />
-                    <YAxis tick={{ fill: "var(--chart-axis, #9A9484)", fontSize: 10 }} tickLine={false} tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}K` : `${v.toFixed(0)}`} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid, #ECE7DD)" vertical={false} />
+                    <XAxis dataKey="time" tick={{ fill: "var(--chart-axis, #9A9484)", fontSize: 10 }} tickLine={false} axisLine={false} minTickGap={48} />
+                    <YAxis tick={{ fill: "var(--chart-axis, #9A9484)", fontSize: 10 }} tickLine={false} axisLine={false} width={44} tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}K` : `${v.toFixed(0)}`} />
                     <Tooltip contentStyle={{ backgroundColor: "var(--chart-tooltip-bg, #FFFFFF)", border: "1px solid var(--chart-tooltip-border, #E8E3D9)", borderRadius: 0, color: "var(--chart-green, #2d3a35)", fontSize: 12, boxShadow: "var(--chart-shadow, 0 4px 12px rgba(45,58,53,0.08))" }} formatter={(value, name) => { const vol = typeof value === "number" ? value : 0; return [`${vol.toLocaleString("es-VE", { minimumFractionDigits: 0 })} USDT`, name === "buyVolume" ? "Vol. Compra" : "Vol. Venta"]; }} />
-                    <Bar dataKey="buyVolume" fill="var(--chart-green, #2d3a35)" fillOpacity={0.4} radius={[2, 2, 0, 0]} maxBarSize={8} />
-                    <Bar dataKey="sellVolume" fill="var(--chart-yellow, #c5a870)" fillOpacity={0.6} radius={[2, 2, 0, 0]} maxBarSize={8} />
+                    <Bar dataKey="buyVolume" fill="var(--chart-green, #2d3a35)" fillOpacity={0.35} maxBarSize={8} />
+                    <Bar dataKey="sellVolume" fill="var(--chart-yellow, #c5a870)" fillOpacity={0.55} maxBarSize={8} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             </>
           )}
         </div>
-      </div>
+      </section>
     </div>
   );
 }
@@ -551,11 +586,11 @@ function IaView({
 
     return (
       <div key={type}>
-        {state.error && <div className="rounded-none border border-red-200 bg-red-50 p-4 text-sm text-red-600">{state.error}</div>}
+        {state.error && <div className="rounded-none border border-brand-down/30 bg-brand-down/5 p-4 text-sm text-brand-down">{state.error}</div>}
         {state.loading && (
           <div className={`animate-pulse rounded-none border ${borderColor} ${bgColor} p-5`}>
             <div className="flex items-center gap-2">
-              <span className="text-lg">{cfg.icon}</span>
+              
               <span className="text-sm font-medium text-brand-green/60">{cfg.label} — Analizando datos de mercado…</span>
             </div>
           </div>
@@ -567,12 +602,9 @@ function IaView({
             transition={{ duration: 0.25, ease: "easeOut" }}
             className={`rounded-none border ${borderColor} ${bgColor} p-5 text-sm leading-relaxed text-brand-green/80`}
           >
-            <div className="mb-3 flex items-center gap-2">
-              <span className="text-lg">{cfg.icon}</span>
-              <span className="text-sm font-semibold text-brand-green">
-                {cfg.label === "Venta" ? "💡 ¿Vender USDT?" : cfg.label === "Compra" ? "💡 ¿Comprar USDT?" : "💡 Análisis de tus trades"}
-              </span>
-            </div>
+            <p className="mb-3 text-[11px] uppercase tracking-[0.12em] text-brand-green/40">
+              {cfg.label === "Venta" ? "¿Vender USDT?" : cfg.label === "Compra" ? "¿Comprar USDT?" : "Análisis de tus trades"}
+            </p>
             {state.advice.split("\n").map((line, i) => (
               <p key={i} className={i > 0 ? "mt-2" : ""}>{line}</p>
             ))}
@@ -596,10 +628,8 @@ function IaView({
                 disabled={state.loading}
                 className={`rounded-none ${cfg.color} px-4 py-2 text-sm font-medium ${cfg.textColor} transition ${cfg.hoverColor} disabled:cursor-not-allowed disabled:opacity-50 flex items-center gap-1.5`}
               >
-                {state.loading ? (
+                {state.loading && (
                   <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-brand-cream/30 border-t-brand-cream" />
-                ) : (
-                  <span>{cfg.icon}</span>
                 )}
                 {state.loading ? "Analizando…" : cfg.label}
               </button>
@@ -662,43 +692,37 @@ function PatternsView({
     <div className="space-y-6">
       {/* Best hours cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="rounded-none border border-brand-green/20 bg-brand-green/5 p-4">
-          <div className="mb-3 flex items-center gap-2">
-            <span className="text-lg">💰</span>
-            <h3 className="text-sm font-semibold text-brand-green">Mejores horas para VENDER USDT</h3>
-          </div>
-          <div className="space-y-2">
+        <div className="border-t border-brand-green/10 pt-4">
+          <p className="mb-2 text-[11px] uppercase tracking-[0.12em] text-brand-yellow">Mejores horas para vender USDT</p>
+          <div className="divide-y divide-brand-green/10">
             {[...scored].sort((a, b) => b.sellScore - a.sellScore).slice(0, 3).map((h, i) => (
-              <div key={h.hour} className="flex items-center justify-between rounded-none px-3 py-2 border border-brand-green/5">
+              <div key={h.hour} className="flex items-center justify-between py-2.5">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-brand-green">#{i + 1}</span>
+                  <span className="w-5 font-mono text-xs text-brand-green/40">{i + 1}</span>
                   <span className="text-sm font-medium text-brand-green">{getHourLabel(h.hour)}</span>
-                  {h.hour === currentHour && <span className="text-xs text-brand-green">← ahora</span>}
+                  {h.hour === currentHour && <span className="text-xs text-brand-green/50">← ahora</span>}
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-bold text-brand-green">{fmtNum(h.avgPrice)} VES</p>
-                  <p className="text-xs text-brand-green/40">Vol. Compra: {(h.avgBuyVolume / 1000).toFixed(0)}K</p>
+                  <p className="font-mono text-sm font-medium tabular-nums text-brand-green">{fmtNum(h.avgPrice)}</p>
+                  <p className="text-xs text-brand-green/40">Vol. compra {(h.avgBuyVolume / 1000).toFixed(0)}K</p>
                 </div>
               </div>
             ))}
           </div>
         </div>
-        <div className="rounded-none border border-brand-yellow/30 bg-brand-yellow/5 p-4">
-          <div className="mb-3 flex items-center gap-2">
-            <span className="text-lg">🟢</span>
-            <h3 className="text-sm font-semibold text-brand-green">Mejores horas para COMPRAR USDT</h3>
-          </div>
-          <div className="space-y-2">
+        <div className="border-t border-brand-green/10 pt-4">
+          <p className="mb-2 text-[11px] uppercase tracking-[0.12em] text-brand-up">Mejores horas para comprar USDT</p>
+          <div className="divide-y divide-brand-green/10">
             {[...scored].sort((a, b) => b.buyScore - a.buyScore).slice(0, 3).map((h, i) => (
-              <div key={h.hour} className="flex items-center justify-between rounded-none px-3 py-2 border border-brand-green/5">
+              <div key={h.hour} className="flex items-center justify-between py-2.5">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-brand-green">#{i + 1}</span>
+                  <span className="w-5 font-mono text-xs text-brand-green/40">{i + 1}</span>
                   <span className="text-sm font-medium text-brand-green">{getHourLabel(h.hour)}</span>
-                  {h.hour === currentHour && <span className="text-xs text-brand-yellow">← ahora</span>}
+                  {h.hour === currentHour && <span className="text-xs text-brand-green/50">← ahora</span>}
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-bold text-brand-yellow">{fmtNum(h.avgPrice)} VES</p>
-                  <p className="text-xs text-brand-green/40">Vol. Venta: {(h.avgSellVolume / 1000).toFixed(0)}K</p>
+                  <p className="font-mono text-sm font-medium tabular-nums text-brand-green">{fmtNum(h.avgPrice)}</p>
+                  <p className="text-xs text-brand-green/40">Vol. venta {(h.avgSellVolume / 1000).toFixed(0)}K</p>
                 </div>
               </div>
             ))}
@@ -707,9 +731,9 @@ function PatternsView({
       </div>
 
       {/* Patterns table */}
-      <div className="overflow-x-auto rounded-none border border-brand-green/10">
+      <div className="overflow-x-auto border-y border-brand-green/10">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-brand-green/8">
+          <thead className="border-b border-brand-green/10">
             <tr>
               <th className="px-4 py-3 font-medium text-brand-green/50">Hora</th>
               <th className="px-4 py-3 font-medium text-brand-green/50 text-right">Precio Prom</th>
@@ -721,7 +745,7 @@ function PatternsView({
               <th className="px-4 py-3 font-medium text-brand-green/50 text-center">Señal</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-brand-green/8">
+          <tbody className="divide-y divide-brand-green/10">
             {patterns.map((p) => {
               const isCurrent = p.hour === currentHour;
               const minAvg = Math.min(...patterns.map((x) => x.avgPrice));
@@ -737,27 +761,26 @@ function PatternsView({
               const isBestSell = bestSell.has(p.hour);
               const isBestBuy = bestBuy.has(p.hour);
 
-              let rowSignal: string;
-              if (isBestSell) rowSignal = "💰";
-              else if (isBestBuy) rowSignal = "🟢";
-              else if (isDip && p.count > 1) rowSignal = "🔵";
-              else if (isPeak && p.count > 1) rowSignal = "🔴";
-              else rowSignal = "⚪";
+              let rowSignal: { dot: string; label: string; cls: string } | null = null;
+              if (isBestSell) rowSignal = { dot: "bg-brand-yellow", label: "Vender", cls: "text-brand-yellow" };
+              else if (isBestBuy) rowSignal = { dot: "bg-brand-up", label: "Comprar", cls: "text-brand-up" };
+              else if (isDip && p.count > 1) rowSignal = { dot: "bg-brand-green/30", label: "Mínimo", cls: "text-brand-green/50" };
+              else if (isPeak && p.count > 1) rowSignal = { dot: "bg-brand-green/30", label: "Máximo", cls: "text-brand-green/50" };
 
               return (
                 <tr
                   key={p.hour}
-                  className={`transition hover:bg-brand-green/3 ${isCurrent ? "bg-brand-green/5" : ""} ${isBestSell ? "bg-brand-green/8" : isBestBuy ? "bg-brand-yellow/8" : ""}`}
+                  className={`transition hover:bg-brand-green/5 ${isCurrent ? "bg-brand-green/5" : isBestSell ? "bg-brand-yellow/5" : isBestBuy ? "bg-brand-up/5" : ""}`}
                 >
                   <td className="px-4 py-2.5 font-medium text-brand-green">
                     {getHourLabel(p.hour)}
-                    {isCurrent && <span className="ml-2 text-xs text-brand-green">← ahora</span>}
+                    {isCurrent && <span className="ml-2 text-xs text-brand-green/50">← ahora</span>}
                   </td>
                   <td className="px-4 py-2.5 text-right font-mono tabular-nums text-brand-green">{fmtNum(p.avgPrice)}</td>
                   <td className="px-4 py-2.5 text-right font-mono tabular-nums text-brand-green">
                     {p.avgBuyVolume > 0 ? (p.avgBuyVolume / 1000).toFixed(0) + "K" : "—"}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-mono tabular-nums text-brand-yellow">
+                  <td className="px-4 py-2.5 text-right font-mono tabular-nums text-brand-green">
                     {p.avgSellVolume > 0 ? (p.avgSellVolume / 1000).toFixed(0) + "K" : "—"}
                   </td>
                   <td className="px-4 py-2.5">
@@ -768,18 +791,25 @@ function PatternsView({
                       <div className="h-2 w-10 overflow-hidden rounded-full bg-brand-yellow/10">
                         <div className="h-full rounded-full bg-brand-yellow/50 transition-all" style={{ width: `${Math.min(sellBarPct, 100)}%` }} />
                       </div>
-                      <span className={`ml-1 text-xs font-medium ${dominant === "compra" ? "text-brand-green" : dominant === "venta" ? "text-brand-yellow" : "text-brand-green/40"}`}>
-                        {dominant === "compra" ? "🚀" : dominant === "venta" ? "💰" : "⚖️"}
+                      <span className={`ml-1.5 text-[11px] font-medium uppercase tracking-wide ${dominant === "compra" ? "text-brand-up" : dominant === "venta" ? "text-brand-yellow" : "text-brand-green/40"}`}>
+                        {dominant === "compra" ? "Compra" : dominant === "venta" ? "Venta" : "Par"}
                       </span>
                     </div>
                   </td>
                   <td className="px-4 py-2.5 text-right font-mono tabular-nums text-brand-green">{fmtNum(p.minPrice)}</td>
-                  <td className="px-4 py-2.5 text-right font-mono tabular-nums text-brand-yellow">{fmtNum(p.maxPrice)}</td>
+                  <td className="px-4 py-2.5 text-right font-mono tabular-nums text-brand-green">{fmtNum(p.maxPrice)}</td>
                   <td className="px-4 py-2.5 text-center">
-                    <span title={isBestSell ? `${(sp?.sellScore ?? 0).toFixed(1)}%` : isBestBuy ? `${(sp?.buyScore ?? 0).toFixed(1)}%` : ""}>{rowSignal}</span>
-                    <br />
-                    {isBestSell && <span className="text-[10px] font-medium text-brand-green">Vender</span>}
-                    {isBestBuy && <span className="text-[10px] font-medium text-brand-yellow">Comprar</span>}
+                    {rowSignal ? (
+                      <span
+                        className={`inline-flex items-center gap-1.5 text-xs font-medium ${rowSignal.cls}`}
+                        title={isBestSell ? `${(sp?.sellScore ?? 0).toFixed(1)}%` : isBestBuy ? `${(sp?.buyScore ?? 0).toFixed(1)}%` : undefined}
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full ${rowSignal.dot}`} />
+                        {rowSignal.label}
+                      </span>
+                    ) : (
+                      <span className="text-brand-green/20">—</span>
+                    )}
                   </td>
                 </tr>
               );
@@ -833,7 +863,7 @@ function IntervencionView({
               <th className="px-5 py-3 text-right font-medium">Total a pagar</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-brand-green/8">
+          <tbody className="divide-y divide-brand-green/10">
             {INTERVENCION_AMOUNTS.map((amount) => (
               <tr key={amount}>
                 <td className="px-5 py-4 font-mono text-brand-green">{fmtNum(amount, 2)} $</td>
@@ -1079,12 +1109,12 @@ export default function DashboardLayout({
 
       {/* ═══ SIDEBAR ═══ */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-brand-green/8 bg-white/95 transition-transform duration-300 lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-brand-green/10 bg-brand-cream transition-transform duration-300 lg:sticky lg:top-0 lg:h-screen lg:self-start lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         {/* Logo */}
-        <div className="flex h-20 items-center justify-between border-b border-brand-green/8 px-5">
+        <div className="flex h-20 items-center justify-between border-b border-brand-green/10 px-5">
           <a href="/dashboard" className="flex items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-none bg-brand-green text-sm font-bold text-brand-cream">
               V
@@ -1131,7 +1161,7 @@ export default function DashboardLayout({
       {/* ═══ MAIN CONTENT ═══ */}
       <div className="flex flex-1 flex-col">
         {/* Top bar */}
-        <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b border-brand-green/8 bg-brand-cream/90 px-4 sm:px-6">
+        <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b border-brand-green/10 bg-brand-cream px-4 sm:px-6">
           <div className="flex items-center gap-3">
             <button onClick={() => setSidebarOpen(true)} className="rounded-none p-1.5 text-brand-green/50 transition hover:bg-brand-green/5 hover:text-brand-green lg:hidden">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1179,8 +1209,8 @@ export default function DashboardLayout({
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <div className="mx-auto max-w-6xl space-y-6">
             {fetchError && (
-              <div className="flex items-center justify-between gap-3 rounded-none border border-amber-300/60 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
-                <span>⚠️ {fetchError}</span>
+              <div className="flex items-center justify-between gap-3 rounded-none border border-brand-yellow/30 bg-brand-yellow/5 px-4 py-2.5 text-sm text-brand-green">
+                <span>{fetchError}</span>
                 <button
                   onClick={() => fetchRates(timeRange, recordsPage, tradesPage)}
                   className="shrink-0 font-medium underline hover:no-underline"
@@ -1228,12 +1258,12 @@ export default function DashboardLayout({
 
                 {/* Trade History */}
                 <div>
-                  <h2 className="mb-4 text-xl font-semibold text-brand-green">📋 Historial de Trades</h2>
+                  <h2 className="mb-4 text-xl font-semibold text-brand-green">Historial de trades</h2>
                   {isAuthenticated ? (
                     <>
                       <div className="overflow-x-auto rounded-none border border-brand-green/10">
                         <table className="w-full text-left text-sm">
-                          <thead className="border-b border-brand-green/8">
+                          <thead className="border-b border-brand-green/10">
                             <tr>
                               <th className="px-4 py-3 font-medium text-brand-green/50">#</th>
                               <th className="px-4 py-3 font-medium text-brand-green/50">Tipo</th>
@@ -1246,9 +1276,9 @@ export default function DashboardLayout({
                               <th className="px-4 py-3 font-medium text-brand-green/50 text-center">Acciones</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-brand-green/8">
+                          <tbody className="divide-y divide-brand-green/10">
                             {trades.map((t) => (
-                              <tr key={t.id} className={`transition hover:bg-brand-green/3 ${t.status === "open" ? "bg-brand-green/3" : ""}`}>
+                              <tr key={t.id} className={`transition hover:bg-brand-green/5 ${t.status === "open" ? "bg-brand-green/5" : ""}`}>
                                 <td className="px-4 py-2.5 font-mono text-xs text-brand-green/40">{t.id}</td>
                                 <td className="px-4 py-2.5">
                                   <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${t.type === "sell" ? "bg-brand-yellow/15 text-brand-green" : "bg-brand-green/10 text-brand-green"}`}>
@@ -1257,15 +1287,15 @@ export default function DashboardLayout({
                                 </td>
                                 <td className="px-4 py-2.5">
                                   <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${t.status === "open" ? "bg-brand-green/10 text-brand-green" : "bg-brand-green/5 text-brand-green/50"}`}>
-                                    {t.status === "open" ? "🟢 Activo" : "🔒 Cerrado"}
+                                    {t.status === "open" ? "Activo" : "Cerrado"}
                                   </span>
                                 </td>
                                 <td className="px-4 py-2.5 text-right font-mono tabular-nums text-brand-green">{fmtNum(t.amount, 0)}</td>
                                 <td className="px-4 py-2.5 text-right font-mono tabular-nums text-brand-green">{fmtNum(t.price)}</td>
-                                <td className={`px-4 py-2.5 text-right font-mono tabular-nums ${t.profit !== null && t.profit > 0 ? "text-brand-green" : t.profit !== null && t.profit < 0 ? "text-red-600" : "text-brand-green/40"}`}>
+                                <td className={`px-4 py-2.5 text-right font-mono tabular-nums ${t.profit !== null && t.profit > 0 ? "text-brand-up" : t.profit !== null && t.profit < 0 ? "text-brand-down" : "text-brand-green/40"}`}>
                                   {t.profit !== null ? `${t.profit >= 0 ? "+" : ""}${fmtNum(t.profit)} Bs.` : "—"}
                                 </td>
-                                <td className={`px-4 py-2.5 text-right font-mono tabular-nums ${t.profitPct !== null && t.profitPct > 0 ? "text-brand-green" : t.profitPct !== null && t.profitPct < 0 ? "text-red-600" : "text-brand-green/40"}`}>
+                                <td className={`px-4 py-2.5 text-right font-mono tabular-nums ${t.profitPct !== null && t.profitPct > 0 ? "text-brand-up" : t.profitPct !== null && t.profitPct < 0 ? "text-brand-down" : "text-brand-green/40"}`}>
                                   {t.profitPct !== null ? `${t.profitPct >= 0 ? "+" : ""}${t.profitPct.toFixed(2)}%` : "—"}
                                 </td>
                                 <td className="px-4 py-2.5 font-mono text-xs text-brand-green/40">
@@ -1273,8 +1303,8 @@ export default function DashboardLayout({
                                 </td>
                                 <td className="px-4 py-2.5 text-center">
                                   <div className="flex items-center justify-center gap-1">
-                                    <button onClick={() => openEditModal(t)} className="rounded-none bg-brand-green/5 px-2 py-1 text-xs text-brand-green/60 transition hover:bg-brand-green/10 hover:text-brand-green" title="Editar">✏️</button>
-                                    <button onClick={() => deleteTrade(t.id)} className="rounded-none bg-brand-green/5 px-2 py-1 text-xs text-brand-green/60 transition hover:bg-red-100 hover:text-red-600" title="Eliminar">🗑️</button>
+                                    <button onClick={() => openEditModal(t)} className="rounded-none bg-brand-green/5 px-2 py-1 text-xs text-brand-green/60 transition hover:bg-brand-green/10 hover:text-brand-green" title="Editar">Editar</button>
+                                    <button onClick={() => deleteTrade(t.id)} className="rounded-none bg-brand-green/5 px-2 py-1 text-xs text-brand-green/60 transition hover:bg-brand-down/10 hover:text-brand-down" title="Eliminar">Eliminar</button>
                                   </div>
                                 </td>
                               </tr>
@@ -1345,7 +1375,7 @@ export default function DashboardLayout({
             className="mx-4 w-full max-w-lg rounded-none border border-brand-green/10 bg-white p-6"
           >
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-brand-green">✏️ Editar Trade #{editingTrade.id}</h3>
+              <h3 className="text-lg font-semibold text-brand-green">Editar trade #{editingTrade.id}</h3>
               <button onClick={() => setEditingTrade(null)} className="rounded-none p-1 text-brand-green/40 transition hover:bg-brand-green/5 hover:text-brand-green">
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1365,7 +1395,7 @@ export default function DashboardLayout({
                   <label className="mb-1 block text-xs text-brand-green/50">Estado</label>
                   <select value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
                     className="w-full rounded-none border border-brand-green/10 px-3 py-2 text-sm text-brand-green">
-                    <option value="open">🟢 Activo</option><option value="closed">🔒 Cerrado</option>
+                    <option value="open">Activo</option><option value="closed">Cerrado</option>
                   </select>
                 </div>
               </div>
@@ -1549,7 +1579,7 @@ function TradePanelView({
                   <div className="flex items-center gap-1.5">
                     <button onClick={() => closeTrade(t.id)} className="rounded-none bg-brand-green px-3 py-1 text-xs text-brand-cream transition hover:bg-brand-green/90">Cerrar</button>
                     <button onClick={async () => { if (!confirm("¿Eliminar este trade?")) return; await fetch(`/api/trades/${t.id}`, { method: "DELETE" }); loadTrades(); onTradeChange(); }}
-                      className="rounded-none bg-brand-green/5 px-2.5 py-1 text-xs text-brand-green/50 transition hover:bg-red-100 hover:text-red-600" title="Eliminar">🗑️</button>
+                      className="rounded-none bg-brand-green/5 px-2.5 py-1 text-xs text-brand-green/50 transition hover:bg-brand-down/10 hover:text-brand-down" title="Eliminar">Eliminar</button>
                   </div>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -1557,12 +1587,12 @@ function TradePanelView({
                   <div><p className="text-xs text-brand-green/40">Cantidad</p><p className="text-lg font-bold text-brand-green">{fmtNum(t.amount, 0)} USDT</p></div>
                   <div><p className="text-xs text-brand-green/40">Actual</p><p className="text-lg font-bold text-brand-green">{currentPrice ? fmtNum(currentPrice) : "—"}</p></div>
                   <div><p className="text-xs text-brand-green/40">Potencial</p>
-                    <p className={`text-lg font-bold ${diff !== null && diff > 0 ? "text-brand-green" : diff !== null && diff < 0 ? "text-red-600" : "text-brand-green"}`}>
+                    <p className={`text-lg font-bold ${diff !== null && diff > 0 ? "text-brand-up" : diff !== null && diff < 0 ? "text-brand-down" : "text-brand-green"}`}>
                       {diff !== null ? `${diff > 0 ? "+" : ""}${diff.toFixed(2)}%` : "—"}
                     </p>
                   </div>
                 </div>
-                {reachedTarget && <div className="mt-2 flex items-center gap-2 text-xs"><span className="inline-flex items-center gap-1 rounded-full bg-brand-green/10 px-2 py-0.5 text-brand-green">🎯 Objetivo alcanzado</span></div>}
+                {reachedTarget && <div className="mt-2 flex items-center gap-2 text-xs"><span className="inline-flex items-center gap-1 rounded-full bg-brand-green/10 px-2 py-0.5 text-brand-green">Objetivo alcanzado</span></div>}
                 {t.notes && <p className="mt-2 text-xs text-brand-green/40">{t.notes}</p>}
               </div>
             );
@@ -1652,7 +1682,7 @@ function AlertsView({ currentPrice }: { currentPrice: number | null }) {
             {creating ? "Creando…" : "Crear alerta"}
           </button>
         </div>
-        {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+        {error && <p className="mt-2 text-xs text-brand-down">{error}</p>}
       </form>
 
       <div>
@@ -1662,7 +1692,7 @@ function AlertsView({ currentPrice }: { currentPrice: number | null }) {
             No tienes alertas activas.
           </div>
         ) : (
-          <div className="divide-y divide-brand-green/8 border border-brand-green/10">
+          <div className="divide-y divide-brand-green/10 border border-brand-green/10">
             {activeAlerts.map((a) => (
               <div key={a.id} className="flex items-center justify-between px-4 py-3">
                 <span className="text-sm text-brand-green">
@@ -1671,7 +1701,7 @@ function AlertsView({ currentPrice }: { currentPrice: number | null }) {
                 </span>
                 <button
                   onClick={() => deleteAlert(a.id)}
-                  className="rounded-none bg-brand-green/5 px-2 py-1 text-xs text-brand-green/60 transition hover:bg-red-100 hover:text-red-600"
+                  className="rounded-none bg-brand-green/5 px-2 py-1 text-xs text-brand-green/60 transition hover:bg-brand-down/10 hover:text-brand-down"
                 >
                   Eliminar
                 </button>
@@ -1684,7 +1714,7 @@ function AlertsView({ currentPrice }: { currentPrice: number | null }) {
       {pastAlerts.length > 0 && (
         <div>
           <h2 className="mb-3 text-sm font-semibold text-brand-green">Historial</h2>
-          <div className="divide-y divide-brand-green/8 border border-brand-green/10">
+          <div className="divide-y divide-brand-green/10 border border-brand-green/10">
             {pastAlerts.slice(0, 10).map((a) => (
               <div key={a.id} className="flex items-center justify-between px-4 py-3 text-sm text-brand-green/50">
                 <span>
@@ -1786,7 +1816,7 @@ function AperturasView() {
                 <th className="px-4 py-3 font-medium">Duración</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-brand-green/8">
+            <tbody className="divide-y divide-brand-green/10">
               {entries.map((e) => (
                 <tr key={e.id}>
                   <td className="px-4 py-2.5 font-mono text-xs text-brand-green/50">{fmtDate(e.date)}</td>

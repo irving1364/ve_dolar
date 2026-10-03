@@ -76,7 +76,7 @@ export default function SettingsView() {
             setLinkStatus("idle");
             setLinkCode(null);
             stopPolling();
-            setMessage({ type: "success", text: "✅ Telegram conectado correctamente" });
+            setMessage({ type: "success", text: "Telegram conectado correctamente" });
           } else if (checkData.expired) {
             setLinkStatus("expired");
             stopPolling();
@@ -105,7 +105,7 @@ export default function SettingsView() {
         }),
       });
       if (res.ok) {
-        setMessage({ type: "success", text: "✅ Configuración guardada" });
+        setMessage({ type: "success", text: "Configuración guardada" });
       } else {
         const data = await res.json();
         setMessage({ type: "error", text: data.error ?? "Error al guardar" });
@@ -131,7 +131,7 @@ export default function SettingsView() {
       const res = await fetch("/api/test-telegram");
       const data = await res.json();
       if (data.ok) {
-        setMessage({ type: "success", text: "✅ Mensaje de prueba enviado a Telegram" });
+        setMessage({ type: "success", text: "Mensaje de prueba enviado a Telegram" });
       } else {
         setMessage({ type: "error", text: data.error ?? "Error al enviar prueba" });
       }
@@ -152,7 +152,6 @@ export default function SettingsView() {
       {/* Telegram Section */}
       <div className="rounded-none border border-brand-green/10 p-6">
         <div className="mb-4 flex items-center gap-2">
-          <span className="text-xl">📱</span>
           <div>
             <h3 className="text-lg font-semibold text-brand-green">Notificaciones Telegram</h3>
             <p className="text-xs text-brand-green/40">Conecta tu cuenta para recibir alertas de trading en tiempo real</p>
@@ -198,7 +197,7 @@ export default function SettingsView() {
                 disabled={generatingLink}
                 className="w-full rounded-none bg-brand-green px-5 py-3 text-sm font-semibold text-brand-cream transition hover:bg-brand-green/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {generatingLink ? "Generando código…" : "🔗 Conectar con Telegram"}
+                {generatingLink ? "Generando código…" : "Conectar con Telegram"}
               </button>
             </div>
           )}
@@ -244,7 +243,7 @@ export default function SettingsView() {
               className={`rounded-none p-3 text-sm ${
                 message.type === "success"
                   ? "border border-brand-green/20 bg-brand-green/5 text-brand-green"
-                  : "border border-red-200 bg-red-50 text-red-600"
+                  : "border border-brand-down/30 bg-brand-down/5 text-brand-down"
               }`}
             >
               {message.text}
@@ -257,14 +256,14 @@ export default function SettingsView() {
               disabled={testing || !telegramChatId}
               className="rounded-none border border-brand-green/10 px-5 py-2.5 text-sm font-medium text-brand-green/60 transition hover:border-brand-green/20 hover:text-brand-green disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {testing ? "Enviando..." : "📨 Probar Telegram"}
+              {testing ? "Enviando..." : "Probar Telegram"}
             </button>
             <button
               onClick={saveSettings}
               disabled={saving}
               className="rounded-none bg-brand-green px-5 py-2.5 text-sm font-medium text-brand-cream transition hover:bg-brand-green/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {saving ? "Guardando..." : "💾 Guardar configuración"}
+              {saving ? "Guardando..." : "Guardar configuración"}
             </button>
           </div>
         </div>
@@ -273,7 +272,6 @@ export default function SettingsView() {
       {/* Account Info */}
       <div className="rounded-none border border-brand-green/10 p-6">
         <div className="mb-4 flex items-center gap-2">
-          <span className="text-xl">👤</span>
           <div>
             <h3 className="text-lg font-semibold text-brand-green">Información de la cuenta</h3>
             <p className="text-xs text-brand-green/40">Tus datos de sesión</p>

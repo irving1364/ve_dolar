@@ -8,6 +8,8 @@
   --brand-cream: 247 245 241;   /* #f7f5f1 warm paper */
   --brand-yellow: 154 42 42;    /* #9a2a2a oxblood accent */
   --brand-green: 22 22 22;      /* #161616 ink */
+  --brand-up: 47 125 79;        /* #2f7d4f positive / compra */
+  --brand-down: 154 42 42;      /* #9a2a2a negative / perdida */
 
   /* Chart colors */
   --chart-green: #161616;
@@ -26,6 +28,8 @@ html.dark {
   --brand-cream: 20 20 20;      /* #141414 near-black */
   --brand-yellow: 217 115 107;  /* #d9736b brick red, lightened for contrast */
   --brand-green: 242 240 236;   /* #f2f0ec off-white ink */
+  --brand-up: 127 191 154;      /* #7fbf9a positive / compra */
+  --brand-down: 217 115 107;    /* #d9736b negative / perdida */
 
   /* Chart colors */
   --chart-green: #f2f0ec;

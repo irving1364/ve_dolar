@@ -62,7 +62,7 @@ export default function UserMenu() {
               transition={{ duration: 0.12 }}
               className="absolute right-0 z-50 mt-2 w-56 rounded-none border border-brand-green/10 bg-white p-2"
             >
-              <div className="border-b border-brand-green/8 px-3 py-2">
+              <div className="border-b border-brand-green/10 px-3 py-2">
                 <p className="text-sm font-medium text-brand-green truncate">
                   {session.user.name}
                 </p>
@@ -73,9 +73,8 @@ export default function UserMenu() {
 
               <button
                 onClick={() => signOut({ callbackUrl: "/" })}
-                className="flex w-full items-center gap-2 rounded-none px-3 py-2 text-sm text-red-600 transition hover:bg-red-50"
+                className="flex w-full items-center gap-2 rounded-none px-3 py-2 text-sm text-brand-down transition hover:bg-brand-down/5"
               >
-                <span className="text-base">🚪</span>
                 Cerrar sesión
               </button>
             </motion.div>
